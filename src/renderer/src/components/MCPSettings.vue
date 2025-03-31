@@ -74,21 +74,21 @@ const closeWindow = () => {
     </div>
     
     <div class="form-group">
-      <label>服务器类型</label>
+      <label class="form-label">服务器类型</label>
       <div class="radio-group">
         <label>
           <input type="radio" v-model="serverType" value="js" :disabled="isServerRunning" />
-          JavaScript
+          <span class="radio-text">JavaScript</span>
         </label>
         <label>
           <input type="radio" v-model="serverType" value="py" :disabled="isServerRunning" />
-          Python
+          <span class="radio-text">Python</span>
         </label>
       </div>
     </div>
     
     <div class="form-group">
-      <label>服务器路径</label>
+      <label class="form-label">服务器路径</label>
       <div class="file-input">
         <input type="text" v-model="serverPath" placeholder="选择服务器脚本文件" :disabled="isServerRunning" />
         <button @click="browseFile" :disabled="isServerRunning">浏览...</button>
@@ -112,6 +112,9 @@ const closeWindow = () => {
   width: 100%;
   margin: 0 auto;
   padding: 20px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 .header {
@@ -153,6 +156,24 @@ h2 {
 
 .form-group {
   margin-bottom: 16px;
+  background-color: #f9f9f9;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid #eaeaea;
+}
+
+.form-label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 6px;
+  color: #333333;
+  font-size: 14px;
+  z-index: 10;
+  position: relative;
+  text-shadow: 0px 0px 1px rgba(0,0,0,0.2);
+  background-color: rgba(255,255,255,0.1);
+  padding: 2px 4px;
+  border-radius: 2px;
 }
 
 label {
@@ -171,6 +192,10 @@ label {
   display: flex;
   align-items: center;
   gap: 4px;
+  color: #333333;
+  font-size: 14px;
+  z-index: 10;
+  position: relative;
 }
 
 .file-input {
@@ -183,6 +208,9 @@ label {
   padding: 8px;
   border: 1px solid #ccc;
   border-radius: 4px;
+  color: #333;
+  background-color: white;
+  font-size: 14px;
 }
 
 button {
@@ -235,5 +263,22 @@ button:disabled {
 
 .cancel-btn:hover:not(:disabled) {
   background-color: #636e72;
+}
+
+.radio-text {
+  color: #333333; 
+  font-size: 14px;
+  font-weight: 500;
+  text-shadow: 0px 0px 1px rgba(0,0,0,0.1);
+  display: inline-block;
+  padding-left: 4px;
+}
+
+input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  cursor: pointer;
+  accent-color: #42b883;
 }
 </style> 
