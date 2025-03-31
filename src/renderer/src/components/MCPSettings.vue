@@ -14,11 +14,26 @@ const canSave = computed(() => {
   return serverPath.value && serverName.value && !isServerRunning.value
 })
 
+// 计算启动按钮是否可用
+const canStart = computed(() => {
+  // 如果已经在运行或无数据无路径，则禁用按钮
+  return !isServerRunning.value && (mcpServers.value.length > 0 || serverPath.value)
+})
+
 // 监听MCP服务器状态变化
 const listenToServerStatus = () => {
   window.electron.ipcRenderer.on('mcp-server-status', (event, data) => {
     isServerRunning.value = data.running
     statusMessage.value = data.message
+    
+    // 更新服务器列表状态
+    if (data.servers && Array.isArray(data.servers)) {
+      // 更新服务器状态
+      mcpServers.value = mcpServers.value.map(server => {
+        const updatedServer = data.servers.find(s => s.id === server.id);
+        return updatedServer ? { ...server, ...updatedServer } : server;
+      });
+    }
   })
 }
 
@@ -42,7 +57,9 @@ const saveServerConfig = async () => {
     const serverConfig = {
       name: serverName.value,
       type: serverType.value,
-      path: serverPath.value
+      path: serverPath.value,
+      status: '未启动', // 初始状态
+      isRunning: false
     }
     
     await window.api.saveMCPServer(serverConfig)
@@ -90,23 +107,35 @@ onUnmounted(() => {
 })
 
 const startServer = () => {
-  // 这里实际应该调用通过IPC与主进程通信，启动MCP服务器
-  // 示例代码，实际实现需要通过IPC与主进程通信
-  if (!serverPath.value) {
-    statusMessage.value = '请输入服务器路径'
-    return
-  }
-  
+  // 启动所有服务器
   statusMessage.value = '正在启动服务器...'
-  // 通知主进程启动服务器
-  window.electron.ipcRenderer.send('start-mcp-server', {
+  
+  // 添加当前表单中的未保存服务器（如果有）
+  const currentServer = {
+    id: -1, // 使用一个临时ID
+    name: serverName.value || '未命名服务器',
     type: serverType.value,
-    path: serverPath.value
-  })
+    path: serverPath.value,
+    status: '未保存',
+    isRunning: false
+  };
+
+  // 通知主进程启动所有服务器（包括当前未保存的）
+  const hasSavedServers = mcpServers.value.length > 0;
+  const hasCurrentServer = serverPath.value ? true : false;
+  
+  // 根据情况决定如何启动
+  if (hasSavedServers) {
+    // 有已保存的服务器，启动所有保存的服务器
+    window.electron.ipcRenderer.send('start-all-mcp-servers');
+  } else if (hasCurrentServer) {
+    // 只有当前未保存的服务器，直接启动它
+    window.electron.ipcRenderer.send('start-single-server', currentServer);
+  }
 }
 
 const stopServer = () => {
-  // 这里实际应该调用通过IPC与主进程通信，停止MCP服务器
+  // 停止所有服务器
   statusMessage.value = '正在停止服务器...'
   // 通知主进程停止服务器
   window.electron.ipcRenderer.send('stop-mcp-server')
@@ -128,6 +157,17 @@ const browseFile = () => {
 const closeWindow = () => {
   // 使用新的API关闭对话框
   window.api.closeMCPDialog()
+}
+
+// 获取服务器状态样式
+const getStatusStyle = (server) => {
+  if (server.isRunning) {
+    return 'running';
+  } else if (server.status && server.status.includes('失败')) {
+    return 'failed';
+  } else {
+    return 'stopped';
+  }
 }
 </script>
 
@@ -173,7 +213,7 @@ const closeWindow = () => {
           </div>
           
           <div class="actions">
-            <button @click="startServer" class="start-btn" :disabled="isServerRunning">启动服务器</button>
+            <button @click="startServer" class="start-btn" :disabled="!canStart">启动服务器</button>
             <button @click="stopServer" class="stop-btn" :disabled="!isServerRunning">停止服务器</button>
             <button @click="saveServerConfig" class="save-btn" :disabled="!canSave">保存配置</button>
             <button @click="closeWindow" class="cancel-btn">关闭</button>
@@ -190,7 +230,12 @@ const closeWindow = () => {
           <ul v-else class="server-list">
             <li v-for="server in mcpServers" :key="server.id" class="server-item">
               <div class="server-info">
-                <div class="server-name">{{ server.name }}</div>
+                <div class="server-name">
+                  {{ server.name }}
+                  <span :class="['server-status', getStatusStyle(server)]">
+                    {{ server.status || '未启动' }}
+                  </span>
+                </div>
                 <div class="server-path">{{ server.path }}</div>
                 <div class="server-type">类型: {{ server.type === 'js' ? 'JavaScript' : 'Python' }}</div>
               </div>
@@ -556,5 +601,28 @@ input[type="radio"] {
 
 .delete-btn:hover:not(:disabled) {
   background-color: #c0392b;
+}
+
+/* 新增服务器状态样式 */
+.server-status {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 12px;
+  border-radius: 3px;
+  margin-left: 8px;
+  color: white;
+  font-weight: normal;
+}
+
+.server-status.running {
+  background-color: #42b883;
+}
+
+.server-status.failed {
+  background-color: #e74c3c;
+}
+
+.server-status.stopped {
+  background-color: #7f8c8d;
 }
 </style> 

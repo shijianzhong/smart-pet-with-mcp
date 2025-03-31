@@ -8,6 +8,9 @@ import DatabaseManager from '../utils/database'
 // 初始化数据库管理器
 const dbManager = new DatabaseManager();
 
+// 全局MCP客户端实例
+let globalMCPClient = null;
+
 // 用于存储已注册的快捷键和对应通道
 const registeredShortcuts = new Map();
 
@@ -291,37 +294,124 @@ app.whenReady().then(() => {
     return path.join(app.getAppPath(), relativePath);
   })
   
-  // 启动MCP服务器
-  ipcMain.on('start-mcp-server', async (event, options) => {
+  // 添加一个新的IPC处理器，用于启动所有MCP服务器
+  ipcMain.on('start-all-mcp-servers', async (event) => {
     try {
-      const { type, path } = options
-      console.log(`正在启动${type}类型的MCP服务器，路径: ${path}`)
+      // 获取所有服务器配置
+      const servers = dbManager.getAllServers();
       
-      // 这里实现服务器启动逻辑
-      const mcpClient = new MCPClient()
-      await mcpClient.connectToServer(path)
+      if (servers.length === 0) {
+        event.reply('mcp-server-status', { 
+          running: false, 
+          message: '没有可用的服务器配置'
+        });
+        return;
+      }
       
-      // 通知渲染进程服务器已启动
-      event.reply('mcp-server-status', { running: true, message: '服务器已启动' })
+      // 如果MCP客户端尚未初始化，则创建一个
+      if (!globalMCPClient) {
+        globalMCPClient = new MCPClient();
+      }
+      
+      // 标记所有服务器为正在启动状态
+      const updatedServers = servers.map(server => ({
+        ...server,
+        status: '正在启动',
+        isRunning: false
+      }));
+      
+      // 先反馈状态
+      event.reply('mcp-server-status', { 
+        running: true, 
+        message: '服务器启动中...',
+        servers: updatedServers
+      });
+      
+      // 尝试连接每个服务器
+      const results = [];
+      
+      for (const server of servers) {
+        try {
+          console.log(`正在启动${server.type}类型的MCP服务器，路径: ${server.path}`);
+          await globalMCPClient.connectToServer(server.path);
+          
+          results.push({
+            id: server.id,
+            status: '运行中',
+            isRunning: true
+          });
+        } catch (err) {
+          console.error(`启动MCP服务器失败: ${server.path}`, err);
+          results.push({
+            id: server.id,
+            status: `启动失败: ${err.message}`,
+            isRunning: false
+          });
+        }
+      }
+      
+      // 检查是否至少有一个服务器启动成功
+      const anyRunning = results.some(r => r.isRunning);
+      
+      // 如果所有服务器都启动失败，直接使用内置工具
+      if (!anyRunning) {
+        globalMCPClient.setupBuiltinTools();
+      }
+      
+      // 启动聊天循环
+      await globalMCPClient.chatLoop();
+      
+      // 反馈最终状态
+      event.reply('mcp-server-status', { 
+        running: anyRunning, 
+        message: anyRunning ? '至少一个服务器已成功启动' : '所有服务器启动失败，使用内置工具', 
+        servers: results
+      });
+      
     } catch (err) {
-      console.error('启动MCP服务器失败:', err)
-      event.reply('mcp-server-status', { running: false, message: `启动失败: ${err.message}` })
+      console.error('同步启动MCP服务器失败:', err);
+      event.reply('mcp-server-status', { 
+        running: false, 
+        message: `启动失败: ${err.message}`
+      });
     }
-  })
+  });
   
-  // 停止MCP服务器
-  ipcMain.on('stop-mcp-server', (event) => {
+  // 修改停止服务器逻辑
+  ipcMain.on('stop-mcp-server', async (event) => {
     try {
-      console.log('正在停止MCP服务器')
-      // 实现服务器停止逻辑
+      console.log('正在停止MCP服务器');
+      
+      // 如果存在全局客户端，则关闭它
+      if (globalMCPClient) {
+        await globalMCPClient.cleanup();
+        globalMCPClient = null;
+      }
+      
+      // 获取所有服务器配置
+      const servers = dbManager.getAllServers();
+      
+      // 更新所有服务器状态为已停止
+      const updatedServers = servers.map(server => ({
+        id: server.id,
+        status: '已停止',
+        isRunning: false
+      }));
       
       // 通知渲染进程服务器已停止
-      event.reply('mcp-server-status', { running: false, message: '服务器已停止' })
+      event.reply('mcp-server-status', { 
+        running: false, 
+        message: '所有服务器已停止',
+        servers: updatedServers
+      });
     } catch (err) {
-      console.error('停止MCP服务器失败:', err)
-      event.reply('mcp-server-status', { running: true, message: `停止失败: ${err.message}` })
+      console.error('停止MCP服务器失败:', err);
+      event.reply('mcp-server-status', { 
+        running: true, 
+        message: `停止失败: ${err.message}`
+      });
     }
-  })
+  });
 
   // 关闭MCP设置弹窗
   ipcMain.on('close-mcp-dialog', () => {
@@ -335,9 +425,16 @@ app.whenReady().then(() => {
     return dbManager.getAllServers();
   });
 
-  // 处理保存MCP服务器配置的请求
+  // 修改处理保存MCP服务器配置的请求，添加状态字段
   ipcMain.handle('save-mcp-server', async (event, serverConfig) => {
-    return dbManager.addServer(serverConfig);
+    // 确保服务器配置包含状态字段
+    const configWithStatus = {
+      ...serverConfig,
+      status: serverConfig.status || '未启动',
+      isRunning: serverConfig.isRunning || false
+    };
+    
+    return dbManager.addServer(configWithStatus);
   });
 
   // 处理删除MCP服务器配置的请求
@@ -349,6 +446,63 @@ app.whenReady().then(() => {
   ipcMain.handle('load-mcp-server', async (event, serverId) => {
     const servers = dbManager.getAllServers();
     return servers.find(server => server.id === serverId);
+  });
+
+  // 添加处理单个未保存服务器启动的IPC处理器
+  ipcMain.on('start-single-server', async (event, serverConfig) => {
+    try {
+      // 如果没有路径，则直接返回错误
+      if (!serverConfig || !serverConfig.path) {
+        event.reply('mcp-server-status', { 
+          running: false, 
+          message: '服务器路径无效'
+        });
+        return;
+      }
+      
+      // 如果MCP客户端尚未初始化，则创建一个
+      if (!globalMCPClient) {
+        globalMCPClient = new MCPClient();
+      }
+      
+      // 更新状态为启动中
+      event.reply('mcp-server-status', { 
+        running: true, 
+        message: '服务器启动中...'
+      });
+      
+      try {
+        console.log(`正在启动${serverConfig.type}类型的MCP服务器，路径: ${serverConfig.path}`);
+        await globalMCPClient.connectToServer(serverConfig.path);
+        
+        // 启动聊天循环
+        await globalMCPClient.chatLoop();
+        
+        // 反馈成功状态
+        event.reply('mcp-server-status', { 
+          running: true, 
+          message: '服务器已成功启动'
+        });
+      } catch (err) {
+        console.error(`启动MCP服务器失败: ${serverConfig.path}`, err);
+        
+        // 如果连接失败，使用内置工具
+        globalMCPClient.setupBuiltinTools();
+        await globalMCPClient.chatLoop();
+        
+        // 反馈失败状态但仍然使用内置工具
+        event.reply('mcp-server-status', { 
+          running: true, 
+          message: `启动失败: ${err.message}，使用内置工具`
+        });
+      }
+    } catch (err) {
+      console.error('启动MCP服务器失败:', err);
+      event.reply('mcp-server-status', { 
+        running: false, 
+        message: `启动失败: ${err.message}`
+      });
+    }
   });
 
   createWindow()
@@ -372,15 +526,15 @@ app.on('window-all-closed', () => {
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.
 
-
+// 修改原有的startMCPClient函数
 async function startMCPClient() {
-  const mcpClient = new MCPClient()
-  // 不再尝试连接到服务器文件
-  // await mcpClient.connectToServer('./src/utils/e-mcp-server.js')
-  
-  // 直接使用内置工具列表
-  mcpClient.setupBuiltinTools()
-  await mcpClient.chatLoop()
+  // 如果全局MCP客户端不存在，则创建一个
+  if (!globalMCPClient) {
+    globalMCPClient = new MCPClient();
+    // 使用内置工具列表
+    globalMCPClient.setupBuiltinTools();
+    await globalMCPClient.chatLoop();
+  }
 }
 
 // 添加此行以在应用启动时调用MCP客户端

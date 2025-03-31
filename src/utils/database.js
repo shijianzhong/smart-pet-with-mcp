@@ -19,13 +19,15 @@ export default class DatabaseManager {
 
       this.db = new Database(this.dbPath);
       
-      // 创建服务器配置表
+      // 创建服务器配置表，添加状态字段
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS mcp_servers (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
           type TEXT NOT NULL,
           path TEXT NOT NULL,
+          status TEXT DEFAULT '未启动',
+          isRunning INTEGER DEFAULT 0,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
@@ -50,23 +52,23 @@ export default class DatabaseManager {
   // 添加新的服务器配置
   addServer(serverConfig) {
     try {
-      const { name, type, path } = serverConfig;
+      const { name, type, path, status, isRunning } = serverConfig;
       
       // 检查是否已存在相同路径的配置
       const existingServer = this.db.prepare('SELECT * FROM mcp_servers WHERE path = ?').get(path);
       if (existingServer) {
         // 如果存在，更新配置
         const stmt = this.db.prepare(
-          'UPDATE mcp_servers SET name = ?, type = ?, created_at = CURRENT_TIMESTAMP WHERE path = ?'
+          'UPDATE mcp_servers SET name = ?, type = ?, status = ?, isRunning = ?, created_at = CURRENT_TIMESTAMP WHERE path = ?'
         );
-        stmt.run(name, type, path);
+        stmt.run(name, type, status || '未启动', isRunning ? 1 : 0, path);
         return existingServer.id;
       } else {
         // 如果不存在，添加新配置
         const stmt = this.db.prepare(
-          'INSERT INTO mcp_servers (name, type, path) VALUES (?, ?, ?)'
+          'INSERT INTO mcp_servers (name, type, path, status, isRunning) VALUES (?, ?, ?, ?, ?)'
         );
-        const info = stmt.run(name, type, path);
+        const info = stmt.run(name, type, path, status || '未启动', isRunning ? 1 : 0);
         return info.lastInsertRowid;
       }
     } catch (error) {
