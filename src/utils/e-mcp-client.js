@@ -1,8 +1,9 @@
 import { Anthropic } from "@anthropic-ai/sdk";
-import {
-  MessageParam,
-  Tool,
-} from "@anthropic-ai/sdk/resources/messages/messages.mjs";
+// 替换静态导入为动态导入，稍后在代码中使用
+// import {
+//   MessageParam,
+//   Tool,
+// } from "@anthropic-ai/sdk/resources/messages/messages.mjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import readline from "readline/promises";
@@ -10,23 +11,40 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-if (!ANTHROPIC_API_KEY) {
-  throw new Error("ANTHROPIC_API_KEY is not set");
-}
+// const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+// if (!ANTHROPIC_API_KEY) {
+//   throw new Error("ANTHROPIC_API_KEY is not set");
+// }
 
 class MCPClient {
    mcp;
    anthropic;
    transport = null;
    tools = [];
+   MessageParam;
+   Tool;
 
   constructor() {
     this.anthropic = new Anthropic({
-      apiKey: ANTHROPIC_API_KEY,
+      apiKey: "sk-fastgpt",
+      baseURL: "http://localhost:3001/v1",
     });
     this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
+    
+    // 使用动态导入初始化MessageParam和Tool
+    this.initializeTypes();
   }
+  
+  async initializeTypes() {
+    try {
+      const messagesModule = await import("@anthropic-ai/sdk/resources/messages/messages.mjs");
+      this.MessageParam = messagesModule.MessageParam;
+      this.Tool = messagesModule.Tool;
+    } catch (error) {
+      console.error("Failed to import message types:", error);
+    }
+  }
+
   // methods will go here
   async connectToServer(serverScriptPath) {
     try {
@@ -89,13 +107,24 @@ class MCPClient {
         const toolName = content.name;
         const toolArgs = content.input ;
   
-        const result = await this.mcp.callTool({
-          name: toolName,
-          arguments: toolArgs,
-        });
+        // 处理没有MCP服务器的情况
+        let result;
+        if (this.mcp && this.transport) {
+          // 正常通过MCP调用工具
+          result = await this.mcp.callTool({
+            name: toolName,
+            arguments: toolArgs,
+          });
+        } else {
+          // 提供模拟响应
+          result = {
+            content: `模拟工具${toolName}调用，参数: ${JSON.stringify(toolArgs)}。在没有MCP服务器的情况下，这是一个模拟响应。`,
+          };
+        }
+        
         toolResults.push(result);
         finalText.push(
-          `[Calling tool ${toolName} with args ${JSON.stringify(toolArgs)}]`
+          `[调用工具 ${toolName} 参数 ${JSON.stringify(toolArgs)}]`
         );
   
         messages.push({
@@ -142,6 +171,48 @@ class MCPClient {
   
   async cleanup() {
     await this.mcp.close();
+  }
+  
+  // 添加内置工具列表，无需连接到外部服务器
+  setupBuiltinTools() {
+    this.tools = [
+      {
+        name: "mcp__read_file",
+        description: "读取文件内容",
+        input_schema: {
+          type: "object",
+          properties: {
+            path: { type: "string" }
+          },
+          required: ["path"]
+        }
+      },
+      {
+        name: "mcp__write_file",
+        description: "写入文件内容",
+        input_schema: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            content: { type: "string" }
+          },
+          required: ["path", "content"]
+        }
+      },
+      {
+        name: "mcp__list_directory",
+        description: "列出目录内容",
+        input_schema: {
+          type: "object",
+          properties: {
+            path: { type: "string" }
+          },
+          required: ["path"]
+        }
+      }
+    ];
+    
+    console.log("已设置内置工具:", this.tools.map(({ name }) => name));
   }
 }
 

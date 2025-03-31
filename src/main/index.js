@@ -76,7 +76,23 @@ app.on('window-all-closed', () => {
 
 async function startMCPClient() {
   const mcpClient = new MCPClient()
-  await mcpClient.connectToServer('./src/utils/e-mcp-server.js')
+  // 不再尝试连接到服务器文件
+  // await mcpClient.connectToServer('./src/utils/e-mcp-server.js')
+  
+  // 直接使用内置工具列表
+  mcpClient.setupBuiltinTools()
   await mcpClient.chatLoop()
 }
+
+// 添加此行以在应用启动时调用MCP客户端
+app.whenReady().then(async () => {
+  try {
+    // 等待一会儿让窗口加载完成
+    setTimeout(async () => {
+      await startMCPClient();
+    }, 2000);
+  } catch (err) {
+    console.error('启动MCP客户端失败:', err);
+  }
+});
 
