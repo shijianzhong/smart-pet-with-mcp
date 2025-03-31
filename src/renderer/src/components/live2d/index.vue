@@ -477,6 +477,7 @@
     user-select: none;
     overflow: hidden;
     background-color: transparent;
+    pointer-events: none; /* 使容器不拦截鼠标事件 */
   }
   
   #myCanvas {
@@ -489,6 +490,7 @@
     app-region: drag;
     cursor: move;
     background-color: transparent;
+    pointer-events: auto; /* 仅在canvas上启用鼠标事件 */
     
     /* 添加以下属性以提高渲染质量 */
     image-rendering: -webkit-optimize-contrast; /* Chrome, Safari */

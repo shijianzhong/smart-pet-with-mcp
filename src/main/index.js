@@ -201,7 +201,7 @@ function createMCPDialog(parent) {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
@@ -504,8 +504,34 @@ app.whenReady().then(() => {
       });
     }
   });
-
+  
+  // 创建窗口
   createWindow()
+  
+  // 注册IPC处理函数，处理渲染进程发送的查询
+  ipcMain.handle('process-query', async (event, query) => {
+    if (!globalMCPClient) {
+      await startMCPClient();
+    }
+    
+    try {
+      console.log('收到查询:', query);
+      const response = await globalMCPClient.processQuery(query);
+      return response;
+    } catch (err) {
+      console.error('处理查询失败:', err);
+      throw err;
+    }
+  });
+  
+  // 等待一会儿让窗口加载完成
+  setTimeout(async () => {
+    try {
+      await startMCPClient();
+    } catch (err) {
+      console.error('启动MCP客户端失败:', err);
+    }
+  }, 2000);
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
@@ -533,21 +559,10 @@ async function startMCPClient() {
     globalMCPClient = new MCPClient();
     // 使用内置工具列表
     globalMCPClient.setupBuiltinTools();
-    await globalMCPClient.chatLoop();
+    // 不再调用chatLoop，而是通过IPC处理查询
+    console.log('MCP客户端已初始化，等待消息查询...');
   }
 }
-
-// 添加此行以在应用启动时调用MCP客户端
-app.whenReady().then(async () => {
-  try {
-    // 等待一会儿让窗口加载完成
-    setTimeout(async () => {
-      await startMCPClient();
-    }, 2000);
-  } catch (err) {
-    console.error('启动MCP客户端失败:', err);
-  }
-});
 
 // 应用退出时关闭数据库连接
 app.on('will-quit', () => {

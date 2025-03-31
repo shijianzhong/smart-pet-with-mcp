@@ -85,7 +85,7 @@ class MCPClient {
   constructor() {
     this.anthropic = new Anthropic({
       apiKey: "sk-fastgpt",
-      baseURL: "http://localhost:3001/v1",
+      baseURL: "http://localhost:3001",
     });
     this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
     
@@ -177,7 +177,7 @@ class MCPClient {
       ];
     
       const response = await this.anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
+        model: "gpt-4o",
         max_tokens: 1000,
         messages,
         tools: this.tools,
@@ -248,6 +248,12 @@ class MCPClient {
       return `处理查询失败: ${error.message}`;
     }
   }
+  
+  /**
+   * 命令行对话循环
+   * 注意：此方法在GUI模式下不会被调用，因为我们使用GUI界面进行对话
+   * 但保留此方法以便在命令行模式下使用
+   */
   async chatLoop() {
     const rl = readline.createInterface({
       input: process.stdin,
