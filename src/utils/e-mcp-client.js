@@ -1,9 +1,4 @@
-import { Anthropic } from "@anthropic-ai/sdk";
-// 替换静态导入为动态导入，稍后在代码中使用
-// import {
-//   MessageParam,
-//   Tool,
-// } from "@anthropic-ai/sdk/resources/messages/messages.mjs";
+import OpenAI from "openai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import readline from "readline/promises";
@@ -69,40 +64,21 @@ class CustomStdioClientTransport {
   }
 }
 
-// const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-// if (!ANTHROPIC_API_KEY) {
-//   throw new Error("ANTHROPIC_API_KEY is not set");
-// }
-
 class MCPClient {
    mcp;
-   anthropic;
+   openai; // 替换 anthropic 为 openai
    transport = null;
    tools = [];
-   MessageParam;
-   Tool;
 
   constructor() {
-    this.anthropic = new Anthropic({
+    // 使用 OpenAI 客户端替换 Anthropic
+    this.openai = new OpenAI({
       apiKey: "sk-fastgpt",
-      baseURL: "http://localhost:3001",
+      baseURL: "http://localhost:3001/v1",
     });
     this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
-    
-    // 使用动态导入初始化MessageParam和Tool
-    this.initializeTypes();
   }
   
-  async initializeTypes() {
-    try {
-      const messagesModule = await import("@anthropic-ai/sdk/resources/messages/messages.mjs");
-      this.MessageParam = messagesModule.MessageParam;
-      this.Tool = messagesModule.Tool;
-    } catch (error) {
-      console.error("Failed to import message types:", error);
-    }
-  }
-
   // methods will go here
   async connectToServer(serverScriptPath) {
     try {
@@ -175,23 +151,32 @@ class MCPClient {
           content: query,
         },
       ];
-    
-      const response = await this.anthropic.messages.create({
+      debugger;
+      console.log("【e-mcp-client.js】processQuery", query);
+      // 使用 OpenAI API 替换 Anthropic API
+      const response = await this.openai.chat.completions.create({
         model: "gpt-4o",
         max_tokens: 1000,
         messages,
         tools: this.tools,
       });
-    
+      console.log("【e-mcp-client.js】response", response);
       const finalText = [];
       const toolResults = [];
     
-      for (const content of response.content) {
-        if (content.type === "text") {
-          finalText.push(content.text);
-        } else if (content.type === "tool_use") {
-          const toolName = content.name;
-          const toolArgs = content.input;
+      // 处理 OpenAI 的响应格式
+      const message = response.choices[0].message;
+      
+      // 添加模型的响应
+      if (message.content) {
+        finalText.push(message.content);
+      }
+      
+      // 处理工具调用
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        for (const toolCall of message.tool_calls) {
+          const toolName = toolCall.function.name;
+          const toolArgs = JSON.parse(toolCall.function.arguments);
     
           // 处理没有MCP服务器的情况
           let result;
@@ -220,20 +205,22 @@ class MCPClient {
             `[调用工具 ${toolName} 参数 ${JSON.stringify(toolArgs)}]`
           );
     
+          // 将工具结果添加到消息列表
           messages.push({
             role: "user",
             content: result.content,
           });
-    
+          console.log("【e-mcp-client.js】messages", messages);
           try {
-            const response = await this.anthropic.messages.create({
+            // 再次调用 OpenAI API 来处理工具结果
+            const followupResponse = await this.openai.chat.completions.create({
               model: "gpt-4o",
               max_tokens: 1000,
               messages,
             });
       
             finalText.push(
-              response.content[0].type === "text" ? response.content[0].text : ""
+              followupResponse.choices[0].message.content || ""
             );
           } catch (err) {
             console.error("处理工具响应失败:", err);
@@ -244,8 +231,8 @@ class MCPClient {
     
       return finalText.join("\n");
     } catch (error) {
-      console.error("处理查询失败:", error);
-      return `处理查询失败: ${error.message}`;
+      console.error("【e-mcp-client.js】处理查询失败:", error);
+      return `【e-mcp-client.js】处理查询失败: ${error.message}`;
     }
   }
   

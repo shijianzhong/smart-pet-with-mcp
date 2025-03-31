@@ -27,6 +27,7 @@
     "better-sqlite3": "^11.9.1",
     "dotenv": "^16.4.7",
     "electron-updater": "^6.3.9",
+    "openai": "^4.90.0",
     "pixi-live2d-display": "0.4.0",
     "pixi.js": "6.5.10",
     "vue-router": "^4.5.0"

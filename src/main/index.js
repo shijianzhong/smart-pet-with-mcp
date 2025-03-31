@@ -519,7 +519,7 @@ app.whenReady().then(async () => {
       const response = await globalMCPClient.processQuery(query);
       return response;
     } catch (err) {
-      console.error('处理查询失败:', err);
+      console.error('【main/index.js】处理查询失败:', err);
       throw err;
     }
   });

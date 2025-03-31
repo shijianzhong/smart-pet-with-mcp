@@ -29,6 +29,9 @@ dependencies:
   electron-updater:
     specifier: ^6.3.9
     version: 6.6.2
+  openai:
+    specifier: ^4.90.0
+    version: 4.90.0(zod@3.24.2)
   pixi-live2d-display:
     specifier: 0.4.0
     version: 0.4.0(@pixi/core@6.5.10)(@pixi/display@6.5.10)(@pixi/loaders@6.5.10)(@pixi/math@6.5.10)(@pixi/sprite@6.5.10)(@pixi/utils@6.5.10)
@@ -4287,6 +4290,30 @@ packages:
     dependencies:
       mimic-fn: 2.1.0
     dev: true
+
+  /openai@4.90.0(zod@3.24.2):
+    resolution: {integrity: sha512-YCuHMMycqtCg1B8G9ezkOF0j8UnBWD3Al/zYaelpuXwU1yhCEv+Y4n9G20MnyGy6cH4GsFwOMrgstQ+bgG1PtA==}
+    hasBin: true
+    peerDependencies:
+      ws: ^8.18.0
+      zod: ^3.23.8
+    peerDependenciesMeta:
+      ws:
+        optional: true
+      zod:
+        optional: true
+    dependencies:
+      '@types/node': 18.19.84
+      '@types/node-fetch': 2.6.12
+      abort-controller: 3.0.0
+      agentkeepalive: 4.6.0
+      form-data-encoder: 1.7.2
+      formdata-node: 4.4.1
+      node-fetch: 2.7.0
+      zod: 3.24.2
+    transitivePeerDependencies:
+      - encoding
+    dev: false
 
   /optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}

@@ -37,7 +37,7 @@ const handleSendMessage = async () => {
     // 添加错误信息到聊天历史
     chatHistory.value.push({
       role: 'error',
-      content: `处理查询失败: ${error.message}`
+      content: `【Home.vue】处理查询失败: ${error.message}`
     })
   } finally {
     // 清空输入框并重置加载状态
