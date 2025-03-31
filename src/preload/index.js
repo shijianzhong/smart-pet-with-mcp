@@ -43,7 +43,13 @@ const api = {
   },
   
   // 注销所有快捷键
-  unregisterShortcuts: () => ipcRenderer.send('unregister-all-shortcuts')
+  unregisterShortcuts: () => ipcRenderer.send('unregister-all-shortcuts'),
+  
+  // 数据库相关API
+  getMCPServers: () => ipcRenderer.invoke('get-mcp-servers'),
+  saveMCPServer: (serverConfig) => ipcRenderer.invoke('save-mcp-server', serverConfig),
+  deleteMCPServer: (serverId) => ipcRenderer.invoke('delete-mcp-server', serverId),
+  loadMCPServer: (serverId) => ipcRenderer.invoke('load-mcp-server', serverId),
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

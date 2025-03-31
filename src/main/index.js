@@ -3,6 +3,10 @@ import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import MCPClient from '../utils/e-mcp-client'
+import DatabaseManager from '../utils/database'
+
+// 初始化数据库管理器
+const dbManager = new DatabaseManager();
 
 // 用于存储已注册的快捷键和对应通道
 const registeredShortcuts = new Map();
@@ -146,12 +150,12 @@ function createWindow() {
 // 创建MCP服务器设置弹窗
 function createMCPDialog(parent) {
   const mcpDialog = new BrowserWindow({
-    width: 500,
-    height: 400,
+    width: 600,
+    height: 600,
     parent: parent,
     modal: true,
     show: false,
-    resizable: false,
+    resizable: true,
     minimizable: false,
     maximizable: false,
     webPreferences: {
@@ -326,6 +330,27 @@ app.whenReady().then(() => {
     }
   })
 
+  // 处理获取MCP服务器列表的请求
+  ipcMain.handle('get-mcp-servers', async () => {
+    return dbManager.getAllServers();
+  });
+
+  // 处理保存MCP服务器配置的请求
+  ipcMain.handle('save-mcp-server', async (event, serverConfig) => {
+    return dbManager.addServer(serverConfig);
+  });
+
+  // 处理删除MCP服务器配置的请求
+  ipcMain.handle('delete-mcp-server', async (event, serverId) => {
+    return dbManager.deleteServer(serverId);
+  });
+
+  // 处理加载服务器配置的请求
+  ipcMain.handle('load-mcp-server', async (event, serverId) => {
+    const servers = dbManager.getAllServers();
+    return servers.find(server => server.id === serverId);
+  });
+
   createWindow()
 
   app.on('activate', function () {
@@ -368,4 +393,9 @@ app.whenReady().then(async () => {
   } catch (err) {
     console.error('启动MCP客户端失败:', err);
   }
+});
+
+// 应用退出时关闭数据库连接
+app.on('will-quit', () => {
+  dbManager.close();
 });
