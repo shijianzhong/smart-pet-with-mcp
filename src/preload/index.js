@@ -22,7 +22,28 @@ const api = {
     return () => ipcRenderer.removeListener('open-change-model-dialog', callback)
   },
   // 获取资源文件的绝对路径
-  getResourcePath: (relativePath) => ipcRenderer.invoke('get-resource-path', relativePath)
+  getResourcePath: (relativePath) => ipcRenderer.invoke('get-resource-path', relativePath),
+  
+  // 快捷键相关API
+  registerShortcut: (accelerator, callback) => {
+    // 为了保持唯一性，使用时间戳创建一个唯一的通道名
+    const channel = `shortcut-callback-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // 注册监听器以接收主进程的快捷键触发通知
+    ipcRenderer.on(channel, () => callback());
+    
+    // 向主进程发送注册快捷键的请求
+    ipcRenderer.send('register-shortcut', { accelerator, channel });
+    
+    // 返回一个清理函数
+    return () => {
+      ipcRenderer.removeListener(channel, callback);
+      ipcRenderer.send('unregister-shortcut', { channel });
+    };
+  },
+  
+  // 注销所有快捷键
+  unregisterShortcuts: () => ipcRenderer.send('unregister-all-shortcuts')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

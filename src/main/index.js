@@ -1,8 +1,11 @@
-import { app, shell, BrowserWindow, ipcMain, Menu, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Menu, dialog, globalShortcut } from 'electron'
 import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import MCPClient from '../utils/e-mcp-client'
+
+// 用于存储已注册的快捷键和对应通道
+const registeredShortcuts = new Map();
 
 function createWindow() {
   // Create the browser window.
@@ -204,6 +207,63 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+  
+  // 注册快捷键
+  ipcMain.on('register-shortcut', (event, { accelerator, channel }) => {
+    try {
+      // 检查快捷键是否已注册
+      if (globalShortcut.isRegistered(accelerator)) {
+        globalShortcut.unregister(accelerator);
+      }
+      
+      // 注册新快捷键
+      const success = globalShortcut.register(accelerator, () => {
+        console.log(`快捷键 ${accelerator} 被触发`);
+        
+        // 发送触发事件给渲染进程
+        try {
+          event.sender.send(channel);
+        } catch (err) {
+          console.error(`发送快捷键事件到渲染进程失败: ${err.message}`);
+        }
+      });
+      
+      if (success) {
+        console.log(`快捷键 ${accelerator} 注册成功`);
+        // 存储快捷键信息以便后续注销
+        registeredShortcuts.set(channel, accelerator);
+      } else {
+        console.error(`快捷键 ${accelerator} 注册失败`);
+      }
+    } catch (err) {
+      console.error(`注册快捷键 ${accelerator} 时出错:`, err);
+    }
+  });
+  
+  // 注销单个快捷键
+  ipcMain.on('unregister-shortcut', (event, { channel }) => {
+    try {
+      const accelerator = registeredShortcuts.get(channel);
+      if (accelerator) {
+        globalShortcut.unregister(accelerator);
+        registeredShortcuts.delete(channel);
+        console.log(`快捷键 ${accelerator} 已注销`);
+      }
+    } catch (err) {
+      console.error('注销快捷键时出错:', err);
+    }
+  });
+  
+  // 注销所有快捷键
+  ipcMain.on('unregister-all-shortcuts', () => {
+    try {
+      globalShortcut.unregisterAll();
+      registeredShortcuts.clear();
+      console.log('所有快捷键已注销');
+    } catch (err) {
+      console.error('注销所有快捷键时出错:', err);
+    }
+  });
   
   // 处理MCP服务器相关的IPC
   ipcMain.on('open-file-dialog', (event) => {
