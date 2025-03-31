@@ -1,0 +1,20 @@
+{
+    "aidang2": {
+        "model": "aidang.model3.json",
+        "scale": 0.8,
+        "position": "center",
+        "url":"./aidang_2/aidang_2.model3.json"
+    },
+    "lafei": {
+        "model": "lafei.model3.json",
+        "scale": 0.8,
+        "position": "center",
+        "url":"./lafei/lafei.model3.json"
+    },
+    "aierdeliqi4": {
+        "model": "aierdeliqi4.model3.json",
+        "scale": 0.8,
+        "position": "center",
+        "url":"./aierdeliqi_4/aierdeliqi_4.model3.json"
+    }
+}

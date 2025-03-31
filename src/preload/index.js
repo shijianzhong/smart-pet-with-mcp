@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import path from 'path'
 
 // Custom APIs for renderer
 const api = {
@@ -14,7 +15,14 @@ const api = {
   },
   onSelectedFile: (callback) => {
     ipcRenderer.once('selected-file', (_, filePath) => callback(filePath))
-  }
+  },
+  // 换装对话框相关API
+  onOpenChangeModelDialog: (callback) => {
+    ipcRenderer.on('open-change-model-dialog', () => callback())
+    return () => ipcRenderer.removeListener('open-change-model-dialog', callback)
+  },
+  // 获取资源文件的绝对路径
+  getResourcePath: (relativePath) => ipcRenderer.invoke('get-resource-path', relativePath)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

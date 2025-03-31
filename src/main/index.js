@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, Menu, dialog } from 'electron'
-import { join } from 'path'
+import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import MCPClient from '../utils/e-mcp-client'
@@ -7,23 +7,42 @@ import MCPClient from '../utils/e-mcp-client'
 function createWindow() {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: 400, // 更适合单个Live2D模型的宽度
+    height: 600, // 更适合单个Live2D模型的高度
     show: false,
-    autoHideMenuBar: false,
+    autoHideMenuBar: false, // 显示菜单栏
+    transparent: true, // 启用窗口透明
+    backgroundColor: '#00ffffff', // 完全透明背景
+    frame: false, // 无边框窗口
+    titleBarStyle: 'customButtonsOnHover', // 使用悬停时才显示的自定义按钮
+    titleBarOverlay: false, // 不使用标题栏覆盖
+    hasShadow: false, // 移除阴影
+    resizable: false, // 禁止调整窗口大小
+    maximizable: false, // 禁止最大化
+    fullscreenable: false, // 禁止全屏
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      preload: path.join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      webSecurity: false, // 允许加载本地资源
+      contextIsolation: true,
+      nodeIntegration: true, // 允许在渲染进程中使用Node API
+      allowRunningInsecureContent: true // 允许加载不安全内容
     }
   })
 
-  // 创建应用菜单
+  // 创建托盘菜单而不是窗口菜单
   const template = [
     {
       label: '文件',
       submenu: [
-        { role: 'quit', label: '退出' }
+        { 
+          label: '退出应用',
+          accelerator: 'CmdOrCtrl+Q', // 添加快捷键
+          click: () => {
+            app.quit();
+          }
+        }
       ]
     },
     {
@@ -34,6 +53,13 @@ function createWindow() {
           click: () => {
             // 创建MCP服务器设置弹窗
             createMCPDialog(mainWindow)
+          }
+        },
+        { 
+          label: '换装',
+          click: () => {
+            // 通知渲染进程打开换装对话框
+            mainWindow.webContents.send('open-change-model-dialog')
           }
         }
       ]
@@ -58,12 +84,47 @@ function createWindow() {
     }
   ]
 
-  const menu = Menu.buildFromTemplate(template)
-  Menu.setApplicationMenu(menu)
+  // 创建右键菜单
+  const contextMenu = Menu.buildFromTemplate(template)
+  
+  // 设置右键菜单
+  mainWindow.webContents.on('context-menu', (_, params) => {
+    contextMenu.popup({ window: mainWindow, x: params.x, y: params.y })
+  })
+
+  // 设置相同的菜单为应用菜单
+  const appMenu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(appMenu);
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
+
+  // 阻止窗口最大化
+  mainWindow.on('maximize', () => {
+    // 立即还原窗口
+    mainWindow.unmaximize();
+  });
+
+  // 阻止窗口最小化
+  mainWindow.on('minimize', () => {
+    // 立即还原窗口
+    mainWindow.restore();
+  });
+  
+  // 监听窗口移动事件，防止在拖拽时靠近屏幕边缘触发最大化
+  mainWindow.on('will-move', (event, newBounds) => {
+    const { screen } = require('electron');
+    const displayBounds = screen.getDisplayMatching(newBounds).workArea;
+    
+    // 检查窗口是否靠近屏幕顶部 (通常这会触发最大化)
+    if (newBounds.y <= 0) {
+      // 阻止移动到屏幕顶部
+      event.preventDefault();
+      // 将窗口放置在一个安全的位置
+      mainWindow.setBounds({ x: newBounds.x, y: 1, width: newBounds.width, height: newBounds.height });
+    }
+  });
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
@@ -75,7 +136,7 @@ function createWindow() {
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
 }
 
@@ -91,8 +152,12 @@ function createMCPDialog(parent) {
     minimizable: false,
     maximizable: false,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      preload: path.join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      webSecurity: false, // 允许加载本地资源
+      contextIsolation: true,
+      nodeIntegration: true,
+      allowRunningInsecureContent: true
     },
     // 允许ESC键关闭窗口
     escapeExitsFullScreen: true
@@ -103,7 +168,7 @@ function createMCPDialog(parent) {
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mcpDialog.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/#/mcp-settings`)
   } else {
-    mcpDialog.loadFile(join(__dirname, '../renderer/index.html'), {
+    mcpDialog.loadFile(path.join(__dirname, '../renderer/index.html'), {
       hash: 'mcp-settings'
     })
   }
@@ -154,6 +219,12 @@ app.whenReady().then(() => {
     }).catch(err => {
       console.error('选择文件时出错:', err)
     })
+  })
+  
+  // 获取资源路径
+  ipcMain.handle('get-resource-path', (event, relativePath) => {
+    // 返回资源文件的绝对路径
+    return path.join(app.getAppPath(), relativePath);
   })
   
   // 启动MCP服务器
@@ -238,4 +309,3 @@ app.whenReady().then(async () => {
     console.error('启动MCP客户端失败:', err);
   }
 });
-

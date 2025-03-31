@@ -15,6 +15,14 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [vue()]
+    plugins: [vue()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {}
+        }
+      }
+    },
+    publicDir: resolve('resources')
   }
 })

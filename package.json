@@ -10,20 +10,24 @@
     "lint": "eslint --cache .",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "electron-vite build && npm run copy-models",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux"
+    "build:linux": "npm run build && electron-builder --linux",
+    "copy-models": "cp -R resources/models out/renderer/"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^4.0.0",
     "@modelcontextprotocol/sdk": "^1.8.0",
+    "@pixi/unsafe-eval": "^7.4.3",
     "dotenv": "^16.4.7",
     "electron-updater": "^6.3.9",
+    "pixi-live2d-display": "0.4.0",
+    "pixi.js": "6.5.10",
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
@@ -35,6 +39,7 @@
     "electron-vite": "^3.1.0",
     "eslint": "^9.23.0",
     "eslint-plugin-vue": "^9.33.0",
+    "less": "^4.2.2",
     "prettier": "^3.5.3",
     "vite": "^6.2.3",
     "vue": "^3.5.13"

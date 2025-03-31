@@ -1,12 +1,13 @@
 <script setup>
 import Versions from './Versions.vue'
+import Live2D from './live2d/index.vue'
 
 const ipcHandle = () => window.electron.ipcRenderer.send('ping')
 </script>
 
 <template>
   <div class="home-container">
-    <img alt="logo" class="logo" src="../assets/electron.svg" />
+    <!-- <img alt="logo" class="logo" src="../assets/electron.svg" />
     <div class="creator">Powered by electron-vite</div>
     <div class="text">
       智能宠物伴侣
@@ -21,7 +22,8 @@ const ipcHandle = () => window.electron.ipcRenderer.send('ping')
         <a @click="ipcHandle">发送IPC测试</a>
       </div>
     </div>
-    <Versions />
+    <Versions /> -->
+    <Live2D />
   </div>
 </template>
 
@@ -30,8 +32,12 @@ const ipcHandle = () => window.electron.ipcRenderer.send('ping')
   display: flex;
   flex-direction: column;
   align-items: center;
-  text-align: center;
-  padding: 20px;
+  justify-content: center;
+  width: 100%;
+  height: 100vh;
+  padding: 0;
+  margin: 0;
+  background-color: transparent;
 }
 .logo {
   width: 150px;
