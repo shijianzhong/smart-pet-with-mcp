@@ -1,21 +1,65 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Menu, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import MCPClient from '../utils/e-mcp-client'
+
 function createWindow() {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
     show: false,
-    autoHideMenuBar: true,
+    autoHideMenuBar: false,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
     }
   })
+
+  // 创建应用菜单
+  const template = [
+    {
+      label: '文件',
+      submenu: [
+        { role: 'quit', label: '退出' }
+      ]
+    },
+    {
+      label: '设置',
+      submenu: [
+        { 
+          label: 'MCP',
+          click: () => {
+            // 创建MCP服务器设置弹窗
+            createMCPDialog(mainWindow)
+          }
+        }
+      ]
+    },
+    {
+      label: '帮助',
+      submenu: [
+        { role: 'toggleDevTools', label: '开发者工具' },
+        { type: 'separator' },
+        { 
+          label: '关于', 
+          click: () => {
+            dialog.showMessageBox(mainWindow, {
+              title: '关于',
+              message: 'Smart Pet with MCP',
+              detail: '一个使用MCP协议的智能宠物应用',
+              buttons: ['确定']
+            })
+          }
+        }
+      ]
+    }
+  ]
+
+  const menu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(menu)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
@@ -35,6 +79,50 @@ function createWindow() {
   }
 }
 
+// 创建MCP服务器设置弹窗
+function createMCPDialog(parent) {
+  const mcpDialog = new BrowserWindow({
+    width: 500,
+    height: 400,
+    parent: parent,
+    modal: true,
+    show: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    },
+    // 允许ESC键关闭窗口
+    escapeExitsFullScreen: true
+  })
+
+  mcpDialog.setMenu(null) // 移除弹窗的菜单栏
+  
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    mcpDialog.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/#/mcp-settings`)
+  } else {
+    mcpDialog.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: 'mcp-settings'
+    })
+  }
+
+  mcpDialog.once('ready-to-show', () => {
+    mcpDialog.show()
+  })
+  
+  // 添加一个全局引用，确保弹窗不会被垃圾回收
+  global.mcpDialog = mcpDialog
+  
+  // 窗口关闭时清除全局引用
+  mcpDialog.on('closed', () => {
+    global.mcpDialog = null
+  })
+  
+  return mcpDialog
+}
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -51,6 +139,61 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+  
+  // 处理MCP服务器相关的IPC
+  ipcMain.on('open-file-dialog', (event) => {
+    dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [
+        { name: '脚本文件', extensions: ['js', 'py'] }
+      ]
+    }).then(result => {
+      if (!result.canceled && result.filePaths.length > 0) {
+        event.reply('selected-file', result.filePaths[0])
+      }
+    }).catch(err => {
+      console.error('选择文件时出错:', err)
+    })
+  })
+  
+  // 启动MCP服务器
+  ipcMain.on('start-mcp-server', async (event, options) => {
+    try {
+      const { type, path } = options
+      console.log(`正在启动${type}类型的MCP服务器，路径: ${path}`)
+      
+      // 这里实现服务器启动逻辑
+      const mcpClient = new MCPClient()
+      await mcpClient.connectToServer(path)
+      
+      // 通知渲染进程服务器已启动
+      event.reply('mcp-server-status', { running: true, message: '服务器已启动' })
+    } catch (err) {
+      console.error('启动MCP服务器失败:', err)
+      event.reply('mcp-server-status', { running: false, message: `启动失败: ${err.message}` })
+    }
+  })
+  
+  // 停止MCP服务器
+  ipcMain.on('stop-mcp-server', (event) => {
+    try {
+      console.log('正在停止MCP服务器')
+      // 实现服务器停止逻辑
+      
+      // 通知渲染进程服务器已停止
+      event.reply('mcp-server-status', { running: false, message: '服务器已停止' })
+    } catch (err) {
+      console.error('停止MCP服务器失败:', err)
+      event.reply('mcp-server-status', { running: true, message: `停止失败: ${err.message}` })
+    }
+  })
+
+  // 关闭MCP设置弹窗
+  ipcMain.on('close-mcp-dialog', () => {
+    if (global.mcpDialog && !global.mcpDialog.isDestroyed()) {
+      global.mcpDialog.close()
+    }
+  })
 
   createWindow()
 

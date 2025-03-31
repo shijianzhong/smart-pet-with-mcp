@@ -23,7 +23,8 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@modelcontextprotocol/sdk": "^1.8.0",
     "dotenv": "^16.4.7",
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.3.9",
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config": "^2.0.0",
