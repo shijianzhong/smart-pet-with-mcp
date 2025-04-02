@@ -97,16 +97,28 @@ const saveServerConfig = async () => {
 // 加载服务器配置
 const loadServerConfig = async (serverId) => {
   try {
-    const server = await window.api.loadMCPServer(serverId)
-    if (server) {
-      serverName.value = server.name
-      serverType.value = server.type
-      serverPath.value = server.path
+    console.log(`尝试加载服务器配置，ID: ${serverId}`);
+    const response = await window.api.loadMCPServer(serverId);
+    
+    console.log('加载服务器配置响应:', response);
+    
+    if (response.success && response.serverConfig) {
+      // 成功加载配置
+      const server = response.serverConfig;
+      serverName.value = server.name;
+      serverType.value = server.type;
+      serverPath.value = server.path;
       // 如果有connectionType字段，则加载它
-      connectionType.value = server.connectionType || 'file'
+      connectionType.value = server.connectionType || 'file';
+      statusMessage.value = `已加载 ${server.name} 的配置`;
+    } else {
+      // 加载失败
+      console.error('加载服务器配置失败:', response.error);
+      statusMessage.value = response.error || '加载服务器配置失败';
     }
   } catch (error) {
-    console.error('加载服务器配置失败:', error)
+    console.error('加载服务器配置出错:', error);
+    statusMessage.value = '加载配置时发生错误';
   }
 }
 
@@ -124,12 +136,79 @@ const deleteServerConfig = async (serverId) => {
 onMounted(() => {
   listenToServerStatus()
   loadMCPServers()
+  
+  // 添加全局键盘快捷键监听
+  document.addEventListener('keydown', handleKeyDown)
 })
 
 // 组件卸载时移除事件监听
 onUnmounted(() => {
   window.electron.ipcRenderer.removeAllListeners('mcp-server-status')
+  
+  // 移除全局键盘快捷键监听
+  document.removeEventListener('keydown', handleKeyDown)
 })
+
+// 处理键盘快捷键
+const handleKeyDown = async (event) => {
+  // 检测常见的粘贴快捷键 (Ctrl+V 或 Command+V)
+  if ((event.ctrlKey || event.metaKey) && event.key === 'v') {
+    console.log('检测到粘贴快捷键');
+    
+    // 获取当前焦点元素
+    const activeElement = document.activeElement;
+    if (activeElement && 
+        (activeElement.tagName === 'INPUT' || 
+         activeElement.tagName === 'TEXTAREA')) {
+      
+      // 尝试获取剪贴板文本
+      try {
+        let clipboardText = '';
+        
+        // 首先尝试直接API
+        try {
+          clipboardText = await window.api.getClipboardText();
+        } catch (err) {
+          // 如果失败，尝试IPC方式
+          clipboardText = await window.api.readClipboardText();
+        }
+        
+        if (clipboardText) {
+          console.log('从剪贴板获取文本:', clipboardText);
+          
+          // 更新对应的数据模型
+          if (activeElement.id === 'server-name-input') {
+            serverName.value = clipboardText;
+          } else if (activeElement.id === 'server-path-input') {
+            serverPath.value = clipboardText;
+          } else {
+            // 尝试直接插入到输入框
+            const start = activeElement.selectionStart || 0;
+            const end = activeElement.selectionEnd || 0;
+            const value = activeElement.value || '';
+            
+            // 组合新值
+            const newValue = value.substring(0, start) + 
+                           clipboardText + 
+                           value.substring(end);
+            
+            // 更新输入框值
+            activeElement.value = newValue;
+            
+            // 可能需要手动触发input事件来更新v-model
+            activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+            
+            // 更新光标位置
+            activeElement.selectionStart = activeElement.selectionEnd = 
+              start + clipboardText.length;
+          }
+        }
+      } catch (err) {
+        console.error('处理粘贴快捷键时出错:', err);
+      }
+    }
+  }
+}
 
 const startServer = () => {
   // 启动所有服务器
@@ -205,6 +284,57 @@ const getConnectionTypeText = (connType) => {
     default: return '文件'
   }
 }
+
+// 处理粘贴事件
+const handlePaste = async (event, field) => {
+  // 阻止默认粘贴行为，我们将手动处理
+  event.preventDefault();
+
+  let pastedText = '';
+  
+  // 首先尝试从剪贴板事件获取文本
+  if (event.clipboardData && event.clipboardData.getData) {
+    pastedText = event.clipboardData.getData('text/plain');
+  }
+  
+  // 如果事件中没有数据，尝试通过API获取
+  if (!pastedText) {
+    try {
+      // 尝试读取系统剪贴板
+      pastedText = await window.api.getClipboardText();
+    } catch (err) {
+      console.error('读取剪贴板失败:', err);
+      
+      // 尝试使用IPC通道读取
+      try {
+        pastedText = await window.api.readClipboardText();
+      } catch (err2) {
+        console.error('通过IPC读取剪贴板失败:', err2);
+      }
+    }
+  }
+  
+  // 确保在控制台打印粘贴的内容（用于调试）
+  console.log('粘贴的内容:', pastedText);
+  
+  // 如果成功获取到文本，设置到对应字段
+  if (pastedText) {
+    if (field === 'serverName') {
+      serverName.value = pastedText;
+    } else if (field === 'serverPath') {
+      serverPath.value = pastedText;
+    }
+  }
+}
+
+// 显示自定义上下文菜单
+const showCustomContextMenu = (event) => {
+  // 这个函数会通过IPC，要求主进程展示一个包含剪切/复制/粘贴选项的上下文菜单
+  // 由于我们在主进程中已经设置了上下文菜单，这里不需要额外实现
+  
+  // 但为了确保点击右键能唤起菜单，不阻止默认行为
+  console.log('用户请求上下文菜单');
+}
 </script>
 
 <template>
@@ -219,7 +349,14 @@ const getConnectionTypeText = (connType) => {
         <div class="form-section">
           <div class="form-group">
             <label class="form-label">服务器名称</label>
-            <input type="text" v-model="serverName" placeholder="输入服务器名称" :disabled="isServerRunning" />
+            <input 
+              id="server-name-input"
+              type="text" 
+              v-model="serverName" 
+              placeholder="输入服务器名称" 
+              :disabled="isServerRunning" 
+              @paste="handlePaste($event, 'serverName')"
+            />
           </div>
           
           <div class="form-group">
@@ -257,7 +394,15 @@ const getConnectionTypeText = (connType) => {
           <div class="form-group">
             <label class="form-label">服务器路径{{ connectionType === 'file' ? '' : '/命令/URL' }}</label>
             <div class="file-input">
-              <input type="text" v-model="serverPath" :placeholder="pathPlaceholder" :disabled="isServerRunning" />
+              <input 
+                id="server-path-input"
+                type="text" 
+                v-model="serverPath" 
+                :placeholder="pathPlaceholder" 
+                :disabled="isServerRunning" 
+                @paste="handlePaste($event, 'serverPath')"
+                @contextmenu="showCustomContextMenu($event)"
+              />
               <button v-if="showBrowseButton" @click="browseFile" :disabled="isServerRunning">浏览...</button>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, clipboard } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import path from 'path'
 
@@ -50,6 +50,13 @@ const api = {
   saveMCPServer: (serverConfig) => ipcRenderer.invoke('save-mcp-server', serverConfig),
   deleteMCPServer: (serverId) => ipcRenderer.invoke('delete-mcp-server', serverId),
   loadMCPServer: (serverId) => ipcRenderer.invoke('load-mcp-server', serverId),
+  
+  // 剪贴板相关API
+  readClipboardText: () => ipcRenderer.invoke('read-clipboard-text'),
+  writeClipboardText: (text) => ipcRenderer.invoke('write-clipboard-text', text),
+  // 直接在渲染进程中操作剪贴板的方法
+  getClipboardText: () => clipboard.readText(),
+  setClipboardText: (text) => clipboard.writeText(text),
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

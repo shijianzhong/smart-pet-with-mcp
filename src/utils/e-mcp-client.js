@@ -21,6 +21,9 @@ class CustomStdioClientTransport {
     // 如果没有提供process，创建一个
     if (!this.process) {
       this.process = spawn(options.command, options.args || []);
+      console.log(`创建了新进程: ${options.command} ${(options.args || []).join(' ')}`);
+    } else {
+      console.log('使用提供的进程');
     }
     
     // 设置错误处理
@@ -30,6 +33,38 @@ class CustomStdioClientTransport {
     });
     this.process.on('exit', (code) => {
       console.log(`服务器进程退出，退出码: ${code}`);
+    });
+    
+    // 添加超时保护机制
+    this.requestTimeoutMs = 60000; // 60秒超时
+    this.pendingRequests = new Map(); // 请求ID -> {resolve, reject, timer}
+    
+    // 处理标准输出数据
+    this.process.stdout.on('data', (data) => {
+      console.log(`[服务器stdout原始数据]: ${data.toString().trim()}`);
+      // 尝试解析JSON响应
+      try {
+        const response = data.toString().trim();
+        console.log('[天气服务器响应]:', response);
+        
+        // 解析JSON响应
+        try {
+          const jsonResponse = JSON.parse(response);
+          console.log('[解析后的JSON响应]:', jsonResponse);
+          
+          // 如果有ID，则清除对应的超时并解决Promise
+          if (jsonResponse.id && this.pendingRequests.has(jsonResponse.id)) {
+            const { resolve, timer } = this.pendingRequests.get(jsonResponse.id);
+            clearTimeout(timer);
+            this.pendingRequests.delete(jsonResponse.id);
+            resolve(response);
+          }
+        } catch (jsonError) {
+          console.error('[JSON解析失败]:', jsonError);
+        }
+      } catch (err) {
+        console.error('[处理服务器响应错误]:', err);
+      }
     });
   }
   
@@ -42,30 +77,53 @@ class CustomStdioClientTransport {
   }
   
   async send(message) {
+    // 生成唯一请求ID用于超时跟踪
+    const requestObj = typeof message === 'string' ? JSON.parse(message) : message;
+    const requestId = requestObj.id || Math.floor(Math.random() * 10000);
+    
+    console.log(`[发送请求 ID:${requestId}]:`, message);
+    
     return new Promise((resolve, reject) => {
       // 确保进程仍在运行
       if (!this.process || this.process.killed) {
         return reject(new Error('服务器进程已关闭'));
       }
       
+      // 确保消息是字符串
+      const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
+      
+      console.log('[发送到MCP服务器的消息]:', messageStr);
+      
+      // 设置请求超时
+      const timer = setTimeout(() => {
+        if (this.pendingRequests.has(requestId)) {
+          this.pendingRequests.delete(requestId);
+          reject(new Error(`请求 ${requestId} 超时`));
+        }
+      }, this.requestTimeoutMs);
+      
+      // 保存请求
+      this.pendingRequests.set(requestId, { resolve, reject, timer });
+      
       // 发送消息
-      this.process.stdin.write(message + '\n', (err) => {
-        if (err) reject(err);
+      this.process.stdin.write(messageStr + '\n', (err) => {
+        if (err) {
+          clearTimeout(timer);
+          this.pendingRequests.delete(requestId);
+          reject(err);
+        }
       });
-      
-      // 设置接收响应的处理器
-      const onData = (data) => {
-        const response = data.toString();
-        this.process.stdout.removeListener('data', onData);
-        resolve(response);
-      };
-      
-      // 监听响应
-      this.process.stdout.once('data', onData);
     });
   }
   
   async close() {
+    // 清理所有挂起的请求
+    for (const [id, { reject, timer }] of this.pendingRequests.entries()) {
+      clearTimeout(timer);
+      reject(new Error('传输关闭'));
+    }
+    this.pendingRequests.clear();
+    
     if (this.process && !this.process.killed) {
       this.process.stderr.removeListener('data', this.onStderrData);
       this.process.kill();
@@ -183,7 +241,12 @@ class MCPClient {
       apiKey: "sk-fastgpt",
       baseURL: "http://localhost:3001/v1",
     });
-    this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
+    // 增加超时设置，将默认的60秒增加到300秒
+    this.mcp = new Client({ 
+      name: "mcp-client-cli", 
+      version: "1.0.0",
+      timeoutMs: 300000 // 增加到300秒
+    });
   }
   
   // methods will go here
@@ -227,13 +290,95 @@ class MCPClient {
         const command = parts[0]; // 应该是 "npx"
         const args = parts.slice(1);
         
+        // 为npx命令添加--no-install选项，避免每次都检查更新
+        if (!args.includes('--no-install') && !args.includes('-n')) {
+          args.unshift('--no-install');
+        }
+        
+        console.log(`【e-mcp-client.js】执行命令: ${command} ${args.join(' ')}`);
+        
         // 创建子进程
-        const childProcess = spawn(command, args);
+        const childProcess = spawn(command, args, {
+          // 设置环境变量，确保子进程能正常运行
+          env: { ...process.env, FORCE_COLOR: '1' }
+        });
+        
+        // 记录子进程输出，帮助调试
+        childProcess.stdout.on('data', (data) => {
+          console.log(`【npx stdout】: ${data.toString().trim()}`);
+        });
+        
+        childProcess.stderr.on('data', (data) => {
+          console.log(`【npx stderr】: ${data.toString().trim()}`);
+        });
         
         // 设置传输层
         this.transport = new CustomStdioClientTransport({
           process: childProcess
         });
+        
+        // 连接前等待一段时间，确保服务器完全启动
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // 启动传输层
+        await this.transport.start();
+        console.log("NPX命令传输层启动完成，准备连接到MCP服务器");
+        
+        // 连接到MCP服务器
+        this.mcp.connect(this.transport);
+        console.log("已连接到NPX命令服务器，正在获取工具列表");
+        
+        // 获取工具列表（增加重试机制）
+        let retries = 0;
+        const maxRetries = 3;
+        const retryDelay = 5000; // 5秒重试间隔
+        
+        while (retries < maxRetries) {
+          try {
+            console.log(`尝试获取工具列表 (尝试 ${retries + 1}/${maxRetries})...`);
+            
+            // 设置超时保护
+            const toolsPromise = this.mcp.listTools();
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('获取工具列表手动超时')), 60000)
+            );
+            
+            // 使用Promise.race来避免永久挂起
+            const toolsResult = await Promise.race([toolsPromise, timeoutPromise]);
+            
+            // 如果成功，处理工具列表
+            this.tools = toolsResult.tools.map((tool) => {
+              return {
+                name: tool.name,
+                description: tool.description,
+                input_schema: tool.inputSchema,
+              };
+            });
+            
+            console.log(
+              "已连接到NPX命令服务器，可用工具:",
+              this.tools.length > 0 ? this.tools.map(({ name }) => name) : "无工具"
+            );
+            
+            // 成功获取到工具列表，跳出循环
+            break;
+          } catch (e) {
+            retries++;
+            console.error(`获取NPX命令服务器工具列表失败 (${retries}/${maxRetries}):`, e);
+            
+            if (retries >= maxRetries) {
+              console.error("已达到最大重试次数，将使用空工具列表继续");
+              this.tools = [];
+            } else {
+              // 等待一段时间后重试
+              console.log(`将在 ${retryDelay/1000} 秒后重试...`);
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+            }
+          }
+        }
+        
+        // 提前返回，避免执行后面的代码
+        return;
       } else if (!isJs && !isPy && !isMjs) {
         throw new Error("Server script must be a .js, .mjs or .py file, or an npx command, or an SSE URL");
       } else if (isPy) {
@@ -263,6 +408,15 @@ class MCPClient {
               if (nodeAvailable) {
                 // 使用系统 node 命令
                 const childProcess = spawn('node', [serverScriptPath]);
+                
+                // 记录输出便于调试
+                childProcess.stdout.on('data', (data) => {
+                  console.log(`【node stdout】: ${data.toString().trim()}`);
+                });
+                
+                childProcess.stderr.on('data', (data) => {
+                  console.log(`【node stderr】: ${data.toString().trim()}`);
+                });
                 
                 this.transport = new CustomStdioClientTransport({
                   process: childProcess
@@ -295,26 +449,45 @@ class MCPClient {
                 args = ['--experimental-modules', tempJsPath];
                 const childProcess = spawn(nodePath, args);
                 
+                // 记录输出便于调试
+                childProcess.stdout.on('data', (data) => {
+                  console.log(`【electron node stdout】: ${data.toString().trim()}`);
+                });
+                
+                childProcess.stderr.on('data', (data) => {
+                  console.log(`【electron node stderr】: ${data.toString().trim()}`);
+                });
+                
                 this.transport = new CustomStdioClientTransport({
                   process: childProcess
                 });
               }
               
               // 提前连接并返回
-              this.mcp.connect(this.transport);
+              await this.transport.start();
+              console.log("传输层启动完成，准备连接到MCP服务器");
               
-              const toolsResult = await this.mcp.listTools();
-              this.tools = toolsResult.tools.map((tool) => {
-                return {
-                  name: tool.name,
-                  description: tool.description,
-                  input_schema: tool.inputSchema,
-                };
-              });
-              console.log(
-                "Connected to server with tools:",
-                this.tools.map(({ name }) => name)
-              );
+              this.mcp.connect(this.transport);
+              console.log("已连接到MCP服务器，正在获取工具列表");
+              
+              try {
+                const toolsResult = await this.mcp.listTools();
+                this.tools = toolsResult.tools.map((tool) => {
+                  return {
+                    name: tool.name,
+                    description: tool.description,
+                    input_schema: tool.inputSchema,
+                  };
+                });
+                console.log(
+                  "Connected to server with tools:",
+                  this.tools.map(({ name }) => name)
+                );
+              } catch (e) {
+                console.error("获取工具列表失败:", e);
+                // 设置内置工具作为备用
+                // this.setupBuiltinTools();
+              }
               return;
             } else {
               // 对于 .js 文件但使用 ESM 语法
@@ -325,6 +498,15 @@ class MCPClient {
           console.log("【e-mcp-client.js】args", args);
           // 创建子进程
           const childProcess = spawn(nodePath, args);
+          
+          // 添加日志输出
+          childProcess.stdout.on('data', (data) => {
+            console.log(`【js stdout】: ${data.toString().trim()}`);
+          });
+          
+          childProcess.stderr.on('data', (data) => {
+            console.log(`【js stderr】: ${data.toString().trim()}`);
+          });
           
           // 设置传输层
           this.transport = new CustomStdioClientTransport({
@@ -337,22 +519,40 @@ class MCPClient {
         }
       }
       
-      this.mcp.connect(this.transport);
+      // 启动传输层
+      await this.transport.start();
+      console.log("传输层启动完成，准备连接到MCP服务器");
       
-      const toolsResult = await this.mcp.listTools();
-      this.tools = toolsResult.tools.map((tool) => {
-        return {
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.inputSchema,
-        };
-      });
-      console.log(
-        "Connected to server with tools:",
-        this.tools.map(({ name }) => name)
-      );
+      // 连接到MCP服务器
+      this.mcp.connect(this.transport);
+      console.log("已连接到MCP服务器，正在获取工具列表");
+      
+      // 尝试获取工具列表，添加更好的错误处理
+      try {
+        const toolsResult = await this.mcp.listTools();
+        this.tools = toolsResult.tools.map((tool) => {
+          return {
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.inputSchema,
+          };
+        });
+        console.log(
+          "Connected to server with tools:",
+          this.tools.map(({ name }) => name)
+        );
+      } catch (e) {
+        console.error("获取工具列表失败，将使用内置工具:", e);
+        // 设置内置工具作为备用
+        // this.setupBuiltinTools();
+        
+        // 不抛出异常，允许程序继续运行
+        return;
+      }
     } catch (e) {
       console.log("Failed to connect to MCP server: ", e);
+      // 设置内置工具作为备用
+      // this.setupBuiltinTools();
       throw e;
     }
   }
@@ -365,13 +565,25 @@ class MCPClient {
         },
       ];
       console.log("【e-mcp-client.js】processQuery", query);
-      // 使用 OpenAI API 替换 Anthropic API
-      const response = await this.openai.chat.completions.create({
+      console.log("【e-mcp-client.js】tools:", JSON.stringify(this.tools));
+      
+      // 根据tools是否为空决定是否添加tools参数
+      const requestOptions = {
         model: "gpt-4o",
         max_tokens: 1000,
         messages,
-        tools: this.tools,
-      });
+      };
+      
+      // 只有当tools非空时才添加到请求中
+      if (this.tools && this.tools.length > 0) {
+        requestOptions.tools = this.tools;
+      } else {
+        console.log("工具列表为空，不添加tools参数");
+      }
+      
+      // 使用 OpenAI API 替换 Anthropic API
+      const response = await this.openai.chat.completions.create(requestOptions);
+      
       console.log("【e-mcp-client.js】response", response);
       console.log("【e-mcp-client.js】response字符串：", JSON.stringify(response));
       const finalText = [];
@@ -503,64 +715,65 @@ class MCPClient {
   
   // 添加内置工具列表，无需连接到外部服务器
   setupBuiltinTools() {
+    /* 
     try {
       this.tools = [
-        {
-          name: "mcp__read_file",
-          description: "读取文件内容",
-          input_schema: {
-            type: "object",
-            properties: {
-              path: { type: "string" }
-            },
-            required: ["path"]
-          }
-        },
-        {
-          name: "mcp__write_file",
-          description: "写入文件内容",
-          input_schema: {
-            type: "object",
-            properties: {
-              path: { type: "string" },
-              content: { type: "string" }
-            },
-            required: ["path", "content"]
-          }
-        },
-        {
-          name: "mcp__list_directory",
-          description: "列出目录内容",
-          input_schema: {
-            type: "object",
-            properties: {
-              path: { type: "string" }
-            },
-            required: ["path"]
-          }
-        },
-        {
-          name: "mcp__execute_command",
-          description: "执行系统命令",
-          input_schema: {
-            type: "object",
-            properties: {
-              command: { type: "string" }
-            },
-            required: ["command"]
-          }
-        },
-        {
-          name: "mcp__search_web",
-          description: "搜索网络获取信息",
-          input_schema: {
-            type: "object",
-            properties: {
-              query: { type: "string" }
-            },
-            required: ["query"]
-          }
-        }
+        // {
+        //   name: "mcp__read_file",
+        //   description: "读取文件内容",
+        //   input_schema: {
+        //     type: "object",
+        //     properties: {
+        //       path: { type: "string" }
+        //     },
+        //     required: ["path"]
+        //   }
+        // },
+        // {
+        //   name: "mcp__write_file",
+        //   description: "写入文件内容",
+        //   input_schema: {
+        //     type: "object",
+        //     properties: {
+        //       path: { type: "string" },
+        //       content: { type: "string" }
+        //     },
+        //     required: ["path", "content"]
+        //   }
+        // },
+        // {
+        //   name: "mcp__list_directory",
+        //   description: "列出目录内容",
+        //   input_schema: {
+        //     type: "object",
+        //     properties: {
+        //       path: { type: "string" }
+        //     },
+        //     required: ["path"]
+        //   }
+        // },
+        // {
+        //   name: "mcp__execute_command",
+        //   description: "执行系统命令",
+        //   input_schema: {
+        //     type: "object",
+        //     properties: {
+        //       command: { type: "string" }
+        //     },
+        //     required: ["command"]
+        //   }
+        // },
+        // {
+        //   name: "mcp__search_web",
+        //   description: "搜索网络获取信息",
+        //   input_schema: {
+        //     type: "object",
+        //     properties: {
+        //       query: { type: "string" }
+        //     },
+        //     required: ["query"]
+        //   }
+        // }
       ];
       
       console.log("已设置内置工具:", this.tools.map(({ name }) => name));
@@ -569,6 +782,7 @@ class MCPClient {
       // 设置最小工具集
       this.tools = [];
     }
+    */
   }
   
   // 检查 Node.js 是否可用

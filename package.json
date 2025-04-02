@@ -16,7 +16,9 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
-    "copy-models": "cp -R resources/models out/renderer/"
+    "copy-models": "cp -R resources/models out/renderer/",
+    "mcp-server": "npx --no-install @modelcontextprotocol/server-filesystem .",
+    "mcp-server:debug": "npx --no-install @modelcontextprotocol/server-filesystem . --debug"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -39,6 +41,7 @@
     "@vitejs/plugin-vue": "^5.2.3",
     "electron": "24.8.0",
     "electron-builder": "^25.1.8",
+    "electron-rebuild": "^3.2.9",
     "electron-vite": "^3.1.0",
     "eslint": "^9.23.0",
     "eslint-plugin-vue": "^9.33.0",
