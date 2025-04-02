@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import MCPClient from '../utils/e-mcp-client'
 import DatabaseManager from '../utils/database'
+import fs from 'fs'
 
 // 初始化数据库管理器
 const dbManager = new DatabaseManager();
@@ -198,6 +199,56 @@ function createMCPDialog(parent) {
   return mcpDialog
 }
 
+// 添加初始化函数，用于检查和更新 MCP 服务器路径
+function initMcpServerPaths() {
+  try {
+    // 获取所有服务器配置
+    const servers = dbManager.getAllServers();
+    
+    // 检查每个服务器路径
+    for (const server of servers) {
+      // 如果是 JS 文件，检查对应的 MJS 文件是否存在
+      if (server.path.endsWith('.js')) {
+        const mjsPath = server.path.replace('.js', '.mjs');
+        const jsPath = server.path;
+        
+        if (fs.existsSync(jsPath) && !fs.existsSync(mjsPath)) {
+          // 如果 JS 文件存在但 MJS 不存在，复制 JS 文件到 MJS
+          console.log(`正在创建 MJS 文件: ${mjsPath}`);
+          fs.copyFileSync(jsPath, mjsPath);
+        }
+        
+        if (fs.existsSync(mjsPath)) {
+          // 更新数据库中的路径
+          console.log(`更新数据库服务器路径: ${jsPath} -> ${mjsPath}`);
+          dbManager.updateJsToMjs(jsPath, mjsPath);
+        }
+      }
+    }
+    
+    // 为 MCP 服务器目录创建 package.json 文件
+    const mcpServerDir = path.join(app.getAppPath(), 'mcpservers');
+    if (fs.existsSync(mcpServerDir)) {
+      const packageJsonPath = path.join(mcpServerDir, 'package.json');
+      
+      // 如果 package.json 不存在，则创建
+      if (!fs.existsSync(packageJsonPath)) {
+        console.log(`为 MCP 服务器目录创建 package.json: ${packageJsonPath}`);
+        const packageJson = {
+          "name": "mcpservers",
+          "version": "1.0.0",
+          "type": "module",
+          "description": "MCP 服务器模块"
+        };
+        
+        fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
+      }
+    }
+  } catch (error) {
+    console.error('初始化 MCP 服务器路径失败:', error);
+  }
+}
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -277,7 +328,7 @@ app.whenReady().then(async () => {
     dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
-        { name: '脚本文件', extensions: ['js', 'py'] }
+        { name: '脚本文件', extensions: ['js', 'mjs', 'py'] }
       ]
     }).then(result => {
       if (!result.canceled && result.filePaths.length > 0) {
@@ -300,78 +351,62 @@ app.whenReady().then(async () => {
       // 获取所有服务器配置
       const servers = dbManager.getAllServers();
       
-      if (servers.length === 0) {
-        event.reply('mcp-server-status', { 
-          running: false, 
-          message: '没有可用的服务器配置'
-        });
-        return;
-      }
+      event.reply('mcp-server-status', {
+        running: false,
+        message: `正在启动所有MCP服务器...`
+      });
       
       // 如果MCP客户端尚未初始化，则创建一个
       if (!globalMCPClient) {
         globalMCPClient = new MCPClient();
       }
       
-      // 标记所有服务器为正在启动状态
-      const updatedServers = servers.map(server => ({
-        ...server,
-        status: '正在启动',
-        isRunning: false
-      }));
-      
-      // 先反馈状态
-      event.reply('mcp-server-status', { 
-        running: true, 
-        message: '服务器启动中...',
-        servers: updatedServers
-      });
-      
-      // 尝试连接每个服务器
-      const results = [];
-      
-      for (const server of servers) {
+      // 同步启动所有已保存的服务器
+      for (let server of servers) {
         try {
-          console.log(`正在启动${server.type}类型的MCP服务器，路径: ${server.path}`);
-          await globalMCPClient.connectToServer(server.path);
-          
-          results.push({
-            id: server.id,
-            status: '运行中',
-            isRunning: true
+          event.reply('mcp-server-status', {
+            running: false,
+            message: `正在启动${server.name}服务器...`
           });
+          
+          console.log(`正在启动${server.type}类型的MCP服务器，路径: ${server.path}`);
+          // 根据连接类型进行不同的处理
+          if (server.connectionType === 'npx' || server.path.includes('npx ')) {
+            await globalMCPClient.connectToServer(server.path);
+          } else if (server.connectionType === 'sse' || server.path.startsWith('http')) {
+            await globalMCPClient.connectToServer(server.path);
+          } else {
+            // 默认文件方式
+            await globalMCPClient.connectToServer(server.path);
+          }
+          
+          // 更新服务器状态
+          server.status = '运行中';
+          server.isRunning = true;
+          dbManager.addServer(server);
         } catch (err) {
           console.error(`启动MCP服务器失败: ${server.path}`, err);
-          results.push({
-            id: server.id,
-            status: `启动失败: ${err.message}`,
-            isRunning: false
-          });
+          server.status = `启动失败: ${err.message}`;
+          server.isRunning = false;
+          dbManager.addServer(server);
         }
       }
       
-      // 检查是否至少有一个服务器启动成功
-      const anyRunning = results.some(r => r.isRunning);
+      // 设置内置工具
+      globalMCPClient.setupBuiltinTools();
       
-      // 如果所有服务器都启动失败，直接使用内置工具
-      if (!anyRunning) {
-        globalMCPClient.setupBuiltinTools();
-      }
+      // 正常情况下不需要启动聊天循环
+      // await globalMCPClient.chatLoop();
       
-      // 启动聊天循环
-      await globalMCPClient.chatLoop();
-      
-      // 反馈最终状态
-      event.reply('mcp-server-status', { 
-        running: anyRunning, 
-        message: anyRunning ? '至少一个服务器已成功启动' : '所有服务器启动失败，使用内置工具', 
-        servers: results
+      event.reply('mcp-server-status', {
+        running: true,
+        message: '所有MCP服务器已启动',
+        servers: dbManager.getAllServers() // 更新后的服务器状态
       });
-      
     } catch (err) {
       console.error('同步启动MCP服务器失败:', err);
-      event.reply('mcp-server-status', { 
-        running: false, 
+      event.reply('mcp-server-status', {
+        running: false,
         message: `启动失败: ${err.message}`
       });
     }
@@ -442,68 +477,140 @@ app.whenReady().then(async () => {
     return dbManager.deleteServer(serverId);
   });
 
-  // 处理加载服务器配置的请求
+  // 添加IPC处理器，处理启动单个服务器的请求
   ipcMain.handle('load-mcp-server', async (event, serverId) => {
-    const servers = dbManager.getAllServers();
-    return servers.find(server => server.id === serverId);
-  });
-
-  // 添加处理单个未保存服务器启动的IPC处理器
-  ipcMain.on('start-single-server', async (event, serverConfig) => {
     try {
-      // 如果没有路径，则直接返回错误
-      if (!serverConfig || !serverConfig.path) {
-        event.reply('mcp-server-status', { 
-          running: false, 
-          message: '服务器路径无效'
-        });
-        return;
+      const servers = dbManager.getAllServers();
+      const serverConfig = servers.find(server => server.id === serverId);
+      
+      if (!serverConfig) {
+        throw new Error(`未找到ID为${serverId}的服务器配置`);
       }
+      
+      event.reply('mcp-server-status', {
+        running: false,
+        message: `正在加载${serverConfig.name}服务器...`
+      });
+      
+      return serverConfig;
+    } catch (err) {
+      console.error('加载MCP服务器失败:', err);
       
       // 如果MCP客户端尚未初始化，则创建一个
       if (!globalMCPClient) {
         globalMCPClient = new MCPClient();
       }
       
-      // 更新状态为启动中
-      event.reply('mcp-server-status', { 
-        running: true, 
-        message: '服务器启动中...'
+      event.reply('mcp-server-status', {
+        running: false,
+        message: `正在启动${serverConfig.name}服务器...`
       });
       
       try {
         console.log(`正在启动${serverConfig.type}类型的MCP服务器，路径: ${serverConfig.path}`);
-        await globalMCPClient.connectToServer(serverConfig.path);
+        // 根据连接类型进行不同的处理
+        if (serverConfig.connectionType === 'npx' || serverConfig.path.includes('npx ')) {
+          await globalMCPClient.connectToServer(serverConfig.path);
+        } else if (serverConfig.connectionType === 'sse' || serverConfig.path.startsWith('http')) {
+          await globalMCPClient.connectToServer(serverConfig.path);
+        } else {
+          // 默认文件方式
+          await globalMCPClient.connectToServer(serverConfig.path);
+        }
         
-        // 启动聊天循环
-        await globalMCPClient.chatLoop();
+        // 正常情况下不需要启动聊天循环
+        // await globalMCPClient.chatLoop();
         
-        // 反馈成功状态
-        event.reply('mcp-server-status', { 
-          running: true, 
-          message: '服务器已成功启动'
+        event.reply('mcp-server-status', {
+          running: true,
+          message: `${serverConfig.name}服务器已启动`
         });
+        
+        // 更新服务器状态
+        serverConfig.status = '运行中';
+        serverConfig.isRunning = true;
+        dbManager.addServer(serverConfig);
       } catch (err) {
         console.error(`启动MCP服务器失败: ${serverConfig.path}`, err);
         
-        // 如果连接失败，使用内置工具
         globalMCPClient.setupBuiltinTools();
-        await globalMCPClient.chatLoop();
+        // await globalMCPClient.chatLoop();
         
-        // 反馈失败状态但仍然使用内置工具
-        event.reply('mcp-server-status', { 
-          running: true, 
-          message: `启动失败: ${err.message}，使用内置工具`
+        event.reply('mcp-server-status', {
+          running: true,
+          message: `警告: 启动失败，使用内置工具`
+        });
+        
+        serverConfig.status = `启动失败: ${err.message}`;
+        serverConfig.isRunning = false;
+        dbManager.addServer(serverConfig);
+      }
+      
+      return null;
+    }
+  });
+
+  // 处理单个服务器的启动请求
+  ipcMain.on('start-single-server', async (event, serverConfig) => {
+    try {
+      console.error('启动单个MCP服务器:', serverConfig);
+      
+      // 如果MCP客户端尚未初始化，则创建一个
+      if (!globalMCPClient) {
+        await startMCPClient();
+      }
+      
+      event.reply('mcp-server-status', {
+        running: false,
+        message: `正在启动${serverConfig.name}服务器...`
+      });
+      
+      try {
+        console.log(`正在启动${serverConfig.type}类型的MCP服务器，路径: ${serverConfig.path}`);
+        // 根据连接类型进行不同的处理
+        if (serverConfig.connectionType === 'npx' || serverConfig.path.includes('npx ')) {
+          await globalMCPClient.connectToServer(serverConfig.path);
+        } else if (serverConfig.connectionType === 'sse' || serverConfig.path.startsWith('http')) {
+          await globalMCPClient.connectToServer(serverConfig.path);
+        } else {
+          // 默认文件方式
+          await globalMCPClient.connectToServer(serverConfig.path);
+        }
+        
+        // 更新状态
+        serverConfig.status = '运行中';
+        serverConfig.isRunning = true;
+        
+        // 如果是有效的服务器ID，保存更新
+        if (serverConfig.id > 0) {
+          dbManager.addServer(serverConfig);
+        }
+        
+        globalMCPClient.setupBuiltinTools();
+        // await globalMCPClient.chatLoop();
+        
+        event.reply('mcp-server-status', {
+          running: true,
+          message: `${serverConfig.name}服务器已启动`
+        });
+      } catch (err) {
+        console.error('启动MCP服务器失败:', err);
+        event.reply('mcp-server-status', {
+          running: false,
+          message: `启动失败: ${err.message}`
         });
       }
     } catch (err) {
-      console.error('启动MCP服务器失败:', err);
-      event.reply('mcp-server-status', { 
-        running: false, 
+      console.error('启动MCP客户端失败:', err);
+      event.reply('mcp-server-status', {
+        running: false,
         message: `启动失败: ${err.message}`
       });
     }
   });
+  
+  // 程序启动时
+  initMcpServerPaths()
   
   // 创建窗口
   createWindow()

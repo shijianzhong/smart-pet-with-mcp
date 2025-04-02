@@ -8,6 +8,8 @@ const isServerRunning = ref(false)
 const statusMessage = ref('未连接')
 const mcpServers = ref([])
 const isLoading = ref(false)
+// 添加连接类型选项
+const connectionType = ref('file') // 'file', 'npx', 'sse'
 
 // 计算保存按钮是否可用
 const canSave = computed(() => {
@@ -18,6 +20,26 @@ const canSave = computed(() => {
 const canStart = computed(() => {
   // 如果已经在运行或无数据无路径，则禁用按钮
   return !isServerRunning.value && (mcpServers.value.length > 0 || serverPath.value)
+})
+
+// 计算服务器路径的占位符文本
+const pathPlaceholder = computed(() => {
+  switch (connectionType.value) {
+    case 'file': return '选择服务器脚本文件'
+    case 'npx': return '输入npx命令，例如：npx my-mcp-server'
+    case 'sse': return '输入服务器URL，例如：http://localhost:3000/events'
+    default: return '输入服务器路径'
+  }
+})
+
+// 计算是否显示浏览按钮
+const showBrowseButton = computed(() => {
+  return connectionType.value === 'file'
+})
+
+// 计算是否显示服务器类型选择
+const showServerTypeSelection = computed(() => {
+  return connectionType.value === 'file'
 })
 
 // 监听MCP服务器状态变化
@@ -59,7 +81,8 @@ const saveServerConfig = async () => {
       type: serverType.value,
       path: serverPath.value,
       status: '未启动', // 初始状态
-      isRunning: false
+      isRunning: false,
+      connectionType: connectionType.value // 添加连接类型
     }
     
     await window.api.saveMCPServer(serverConfig)
@@ -79,6 +102,8 @@ const loadServerConfig = async (serverId) => {
       serverName.value = server.name
       serverType.value = server.type
       serverPath.value = server.path
+      // 如果有connectionType字段，则加载它
+      connectionType.value = server.connectionType || 'file'
     }
   } catch (error) {
     console.error('加载服务器配置失败:', error)
@@ -117,7 +142,8 @@ const startServer = () => {
     type: serverType.value,
     path: serverPath.value,
     status: '未保存',
-    isRunning: false
+    isRunning: false,
+    connectionType: connectionType.value // 添加连接类型
   };
 
   // 通知主进程启动所有服务器（包括当前未保存的）
@@ -169,6 +195,16 @@ const getStatusStyle = (server) => {
     return 'stopped';
   }
 }
+
+// 根据连接类型获取显示的类型文本
+const getConnectionTypeText = (connType) => {
+  switch (connType) {
+    case 'file': return '文件'
+    case 'npx': return 'NPX命令'
+    case 'sse': return 'SSE连接'
+    default: return '文件'
+  }
+}
 </script>
 
 <template>
@@ -187,6 +223,24 @@ const getStatusStyle = (server) => {
           </div>
           
           <div class="form-group">
+            <label class="form-label">连接类型</label>
+            <div class="radio-group">
+              <label>
+                <input type="radio" v-model="connectionType" value="file" :disabled="isServerRunning" />
+                <span class="radio-text">文件</span>
+              </label>
+              <label>
+                <input type="radio" v-model="connectionType" value="npx" :disabled="isServerRunning" />
+                <span class="radio-text">NPX命令</span>
+              </label>
+              <label>
+                <input type="radio" v-model="connectionType" value="sse" :disabled="isServerRunning" />
+                <span class="radio-text">SSE连接</span>
+              </label>
+            </div>
+          </div>
+          
+          <div class="form-group" v-if="showServerTypeSelection">
             <label class="form-label">服务器类型</label>
             <div class="radio-group">
               <label>
@@ -201,10 +255,10 @@ const getStatusStyle = (server) => {
           </div>
           
           <div class="form-group">
-            <label class="form-label">服务器路径</label>
+            <label class="form-label">服务器路径{{ connectionType === 'file' ? '' : '/命令/URL' }}</label>
             <div class="file-input">
-              <input type="text" v-model="serverPath" placeholder="选择服务器脚本文件" :disabled="isServerRunning" />
-              <button @click="browseFile" :disabled="isServerRunning">浏览...</button>
+              <input type="text" v-model="serverPath" :placeholder="pathPlaceholder" :disabled="isServerRunning" />
+              <button v-if="showBrowseButton" @click="browseFile" :disabled="isServerRunning">浏览...</button>
             </div>
           </div>
           
@@ -237,7 +291,9 @@ const getStatusStyle = (server) => {
                   </span>
                 </div>
                 <div class="server-path">{{ server.path }}</div>
-                <div class="server-type">类型: {{ server.type === 'js' ? 'JavaScript' : 'Python' }}</div>
+                <div class="server-type">
+                  类型: {{ server.connectionType ? getConnectionTypeText(server.connectionType) : (server.type === 'js' ? 'JavaScript' : 'Python') }}
+                </div>
               </div>
               <div class="server-actions">
                 <button @click="loadServerConfig(server.id)" :disabled="isServerRunning" class="load-btn">加载</button>
