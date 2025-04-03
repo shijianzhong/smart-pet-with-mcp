@@ -262,9 +262,12 @@ class MCPClient {
         const toolsResult = await this.mcp.listTools();
         this.tools = toolsResult.tools.map((tool) => {
           return {
-            name: tool.name,
-            description: tool.description,
-            input_schema: tool.inputSchema,
+            type: "function",
+            function: {
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.inputSchema
+            }
           };
         });
         
@@ -313,20 +316,23 @@ class MCPClient {
         });
         
         // 设置传输层
-        this.transport = new CustomStdioClientTransport({
-          process: childProcess
+        this.transport = new StdioClientTransport({
+          command,
+          args: args,
         });
         
         // 连接前等待一段时间，确保服务器完全启动
         await new Promise(resolve => setTimeout(resolve, 2000));
         
         // 启动传输层
-        await this.transport.start();
-        console.log("NPX命令传输层启动完成，准备连接到MCP服务器");
+        // await this.transport.start();
+        console.log("NPX命令传输层启动完成，准备连接到MCP服务器11111");
         
         // 连接到MCP服务器
         this.mcp.connect(this.transport);
         console.log("已连接到NPX命令服务器，正在获取工具列表");
+
+        
         
         // 获取工具列表（增加重试机制）
         let retries = 0;
@@ -349,15 +355,20 @@ class MCPClient {
             // 如果成功，处理工具列表
             this.tools = toolsResult.tools.map((tool) => {
               return {
-                name: tool.name,
-                description: tool.description,
-                input_schema: tool.inputSchema,
+                type: "function",
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.inputSchema
+                }
               };
             });
             
             console.log(
               "已连接到NPX命令服务器，可用工具:",
-              this.tools.length > 0 ? this.tools.map(({ name }) => name) : "无工具"
+              this.tools.length > 0 ? this.tools.map((item)=>
+                item.function.name
+              ) : "无工具"
             );
             
             // 成功获取到工具列表，跳出循环
@@ -384,7 +395,7 @@ class MCPClient {
       } else if (isPy) {
         // Python脚本处理
         const command = process.platform === "win32" ? "python" : "python3";
-        this.transport = new CustomStdioClientTransport({
+        this.transport = new StdioClientTransport({
           command,
           args: [serverScriptPath],
         });
@@ -418,7 +429,7 @@ class MCPClient {
                   console.log(`【node stderr】: ${data.toString().trim()}`);
                 });
                 
-                this.transport = new CustomStdioClientTransport({
+                this.transport = new StdioClientTransport({
                   process: childProcess
                 });
                 
@@ -458,7 +469,7 @@ class MCPClient {
                   console.log(`【electron node stderr】: ${data.toString().trim()}`);
                 });
                 
-                this.transport = new CustomStdioClientTransport({
+                this.transport = new StdioClientTransport({
                   process: childProcess
                 });
               }
@@ -474,9 +485,12 @@ class MCPClient {
                 const toolsResult = await this.mcp.listTools();
                 this.tools = toolsResult.tools.map((tool) => {
                   return {
-                    name: tool.name,
-                    description: tool.description,
-                    input_schema: tool.inputSchema,
+                    type: "function",
+                    function: {
+                      name: tool.name,
+                      description: tool.description,
+                      parameters: tool.inputSchema
+                    }
                   };
                 });
                 console.log(
@@ -509,7 +523,7 @@ class MCPClient {
           });
           
           // 设置传输层
-          this.transport = new CustomStdioClientTransport({
+          this.transport = new StdioClientTransport({
             process: childProcess
           });
           
@@ -532,9 +546,12 @@ class MCPClient {
         const toolsResult = await this.mcp.listTools();
         this.tools = toolsResult.tools.map((tool) => {
           return {
-            name: tool.name,
-            description: tool.description,
-            input_schema: tool.inputSchema,
+            type: "function",
+            function: {
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.inputSchema
+            }
           };
         });
         console.log(
@@ -569,7 +586,7 @@ class MCPClient {
       
       // 根据tools是否为空决定是否添加tools参数
       const requestOptions = {
-        model: "gpt-4o",
+        model: "qwen-turbo",
         max_tokens: 1000,
         messages,
       };
@@ -639,7 +656,7 @@ class MCPClient {
           try {
             // 再次调用 OpenAI API 来处理工具结果
             const followupResponse = await this.openai.chat.completions.create({
-              model: "gpt-4o",
+              model: "qwen-turbo",
               max_tokens: 1000,
               messages,
             });
