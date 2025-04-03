@@ -135,7 +135,15 @@ const deleteServerConfig = async (serverId) => {
 // 组件挂载时注册事件监听
 onMounted(() => {
   listenToServerStatus()
-  loadMCPServers()
+  loadMCPServers().then(() => {
+    // 加载完服务器列表后，检查是否有正在运行的服务器
+    const runningServers = mcpServers.value.filter(server => server.isRunning);
+    if (runningServers.length > 0) {
+      // 如果有运行中的服务器，更新状态
+      isServerRunning.value = true;
+      statusMessage.value = `${runningServers.length}个服务器正在运行`;
+    }
+  })
   
   // 添加全局键盘快捷键监听
   document.addEventListener('keydown', handleKeyDown)

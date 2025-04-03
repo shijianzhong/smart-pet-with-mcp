@@ -109,6 +109,17 @@ function createWindow() {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+    
+    // 当窗口准备好显示后，发送当前的MCP服务器状态
+    const servers = dbManager.getAllServers();
+    const runningServers = servers.filter(server => server.isRunning);
+    if (runningServers.length > 0) {
+      mainWindow.webContents.send('mcp-server-status', {
+        running: true,
+        message: `${runningServers.length}个MCP服务器正在运行`,
+        servers: servers
+      });
+    }
   })
 
   // 阻止窗口最大化
@@ -275,6 +286,118 @@ app.whenReady().then(async () => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  // 应用程序初始化时检查数据库中是否有服务器配置，如果有，则自动启动这些服务器
+  try {
+    // 初始化MCP服务器路径
+    initMcpServerPaths();
+    
+    // 获取所有服务器配置
+    const servers = dbManager.getAllServers();
+    
+    // 如果数据库中存在服务器配置，则自动启动服务器
+    if (servers && servers.length > 0) {
+      console.log(`数据库中存在${servers.length}个MCP服务器配置，正在尝试启动...`);
+      
+      // 创建MCP客户端
+      if (!globalMCPClient) {
+        await startMCPClient();
+      }
+      
+      // 标记是否至少有一个服务器成功启动
+      let anyServerStarted = false;
+      
+      // 启动所有服务器
+      for (let server of servers) {
+        try {
+          console.log(`正在启动${server.type}类型的MCP服务器，路径: ${server.path}`);
+          // 根据连接类型进行不同的处理
+          if (server.connectionType === 'npx' || server.path.includes('npx ')) {
+            try {
+              await globalMCPClient.connectToServer(server.path);
+              
+              // 更新服务器状态
+              server.status = '运行中';
+              server.isRunning = true;
+              dbManager.addServer(server);
+              anyServerStarted = true;
+            } catch (npxErr) {
+              console.error(`npx命令启动失败: ${server.path}`, npxErr);
+              server.status = `启动失败: ${npxErr.message}`;
+              server.isRunning = false;
+              dbManager.addServer(server);
+              
+              // 继续尝试启动其他服务器
+              continue;
+            }
+          } else if (server.connectionType === 'sse' || server.path.startsWith('http')) {
+            try {
+              await globalMCPClient.connectToServer(server.path);
+              
+              // 更新服务器状态
+              server.status = '运行中';
+              server.isRunning = true;
+              dbManager.addServer(server);
+              anyServerStarted = true;
+            } catch (sseErr) {
+              console.error(`SSE连接失败: ${server.path}`, sseErr);
+              server.status = `连接失败: ${sseErr.message}`;
+              server.isRunning = false;
+              dbManager.addServer(server);
+              
+              // 继续尝试启动其他服务器
+              continue;
+            }
+          } else {
+            // 默认文件方式
+            try {
+              await globalMCPClient.connectToServer(server.path);
+              
+              // 更新服务器状态
+              server.status = '运行中';
+              server.isRunning = true;
+              dbManager.addServer(server);
+              anyServerStarted = true;
+            } catch (fileErr) {
+              console.error(`文件服务器启动失败: ${server.path}`, fileErr);
+              server.status = `启动失败: ${fileErr.message}`;
+              server.isRunning = false;
+              dbManager.addServer(server);
+              
+              // 继续尝试启动其他服务器
+              continue;
+            }
+          }
+        } catch (err) {
+          console.error(`启动MCP服务器失败: ${server.path}`, err);
+          server.status = `启动失败: ${err.message}`;
+          server.isRunning = false;
+          dbManager.addServer(server);
+        }
+      }
+      
+      console.log(anyServerStarted ? '已成功自动启动MCP服务器' : '所有服务器自动启动失败');
+      
+      // 当主窗口创建后，通知渲染进程更新服务器状态
+      app.on('browser-window-created', (_, window) => {
+        // 等待窗口准备好后发送状态
+        window.webContents.on('did-finish-load', () => {
+          // 发送启动状态给渲染进程
+          if (anyServerStarted) {
+            window.webContents.send('mcp-server-status', {
+              running: true,
+              message: '已自动启动MCP服务器',
+              servers: dbManager.getAllServers() // 更新后的服务器状态
+            });
+          }
+        });
+      });
+    } else {
+      console.log('数据库中没有MCP服务器配置，跳过自动启动');
+    }
+  } catch (err) {
+    console.error('自动启动MCP服务器失败:', err);
+  }
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
