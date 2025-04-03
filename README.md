@@ -44,3 +44,30 @@ $ pnpm build:linux
 3. 保留e-mcp-client.js中的chatLoop函数以保持兼容性，但在GUI模式下不再调用它
 
 这些更改使应用更加用户友好，让用户可以直接在图形界面中与AI助手交互。
+
+
+## 语音识别采用 FunASR
+
+### 镜像启动
+```bash
+sudo docker pull \
+  registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-online-cpu-0.1.12
+mkdir -p ./funasr-runtime-resources/models
+sudo docker run -p 10096:10095 -it --privileged=true \
+  -v $PWD/funasr-runtime-resources/models:/workspace/models \
+  registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-online-cpu-0.1.12
+```
+### 服务启动
+```bash
+cd FunASR/runtime
+
+nohup bash run_server_2pass.sh \
+  --model-dir damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-onnx \
+  --online-model-dir damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online-onnx \
+  --vad-dir damo/speech_fsmn_vad_zh-cn-16k-common-onnx \
+  --punc-dir damo/punc_ct-transformer_zh-cn-common-vad_realtime-vocab272727-onnx \
+  --lm-dir damo/speech_ngram_lm_zh-cn-ai-wesp-fst \
+  --itn-dir thuduj12/fst_itn_zh \
+  --certfile 0 \
+  --hotword ../../hotwords.txt > log.txt 2>&1 &
+```

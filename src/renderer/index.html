@@ -6,8 +6,13 @@
     <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src 'self' file:; font-src 'self' data:; connect-src 'self' file:;"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src 'self' file:; font-src 'self' data:; connect-src 'self' file: ws: wss:;"
     />
+    
+    <!-- 语音识别相关脚本 -->
+    <script src="../../resources/speech/recorder-core.js"></script>
+    <script src="../../resources/speech/wav.js"></script>
+    <script src="../../resources/speech/pcm.js"></script>
   </head>
 
   <body>

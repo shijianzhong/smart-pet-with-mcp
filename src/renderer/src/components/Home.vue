@@ -1,7 +1,8 @@
 <script setup>
 import Versions from './Versions.vue'
 import Live2D from './live2d/index.vue'
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { SpeechRecognition } from './speech/speechRecognition.js'
 
 const ipcHandle = () => window.electron.ipcRenderer.send('ping')
 
@@ -9,6 +10,98 @@ const ipcHandle = () => window.electron.ipcRenderer.send('ping')
 const userInput = ref('')
 const chatHistory = ref([])
 const isLoading = ref(false)
+
+// 语音识别相关状态
+const isRecording = ref(false)
+const speechStatus = ref('idle') // idle, connecting, recording, processing, error
+const speechRecognition = ref(null)
+// 语音识别服务地址直接写死在代码中
+const asrServerUrl = 'ws://127.0.0.1:10096/'
+
+// 初始化语音识别
+onMounted(() => {
+  // 确保全局Recorder对象已加载
+  const checkRecorderLoaded = () => {
+    if (typeof window.Recorder === 'undefined') {
+      console.warn('Recorder对象未加载，将在500ms后重试');
+      setTimeout(initSpeechRecognition, 500);
+    } else {
+      initSpeechRecognition();
+    }
+  };
+  
+  // 初始化语音识别实例
+  const initSpeechRecognition = () => {
+    try {
+      speechRecognition.value = new SpeechRecognition({
+        serverUrl: asrServerUrl,
+        onResult: (text, isFinal) => {
+          userInput.value = text
+          if (isFinal) {
+            speechStatus.value = 'idle'
+            isRecording.value = false
+          }
+        },
+        onStateChange: (state) => {
+          switch (state) {
+            case 'connecting':
+              speechStatus.value = 'connecting'
+              break
+            case 'connected':
+              speechStatus.value = 'connected'
+              break
+            case 'recording':
+              speechStatus.value = 'recording'
+              isRecording.value = true
+              break
+            case 'stopped':
+              speechStatus.value = 'processing'
+              break
+            case 'disconnected':
+              speechStatus.value = 'idle'
+              isRecording.value = false
+              break
+            case 'error':
+              speechStatus.value = 'error'
+              isRecording.value = false
+              break
+          }
+        }
+      });
+      console.log('语音识别模块初始化成功');
+    } catch (error) {
+      console.error('语音识别初始化失败:', error);
+      speechStatus.value = 'error';
+    }
+  };
+  
+  // 开始检查Recorder是否已加载
+  checkRecorderLoaded();
+})
+
+onBeforeUnmount(() => {
+  // 清理语音识别资源
+  if (speechRecognition.value && isRecording.value) {
+    speechRecognition.value.stop()
+  }
+})
+
+// 处理语音识别
+const toggleSpeechRecognition = () => {
+  if (isRecording.value) {
+    // 停止录音
+    speechRecognition.value.stop()
+    isRecording.value = false
+    speechStatus.value = 'processing'
+  } else {
+    // 开始录音
+    if (speechRecognition.value.start(asrServerUrl)) {
+      speechStatus.value = 'connecting'
+    } else {
+      speechStatus.value = 'error'
+    }
+  }
+}
 
 // 处理用户发送消息
 const handleSendMessage = async () => {
@@ -110,14 +203,34 @@ const handleKeyDown = (event) => {
           v-model="userInput" 
           @keydown="handleKeyDown" 
           placeholder="输入消息..." 
-          :disabled="isLoading"
+          :disabled="isLoading || isRecording"
         ></textarea>
+        
+        <!-- 语音识别按钮 -->
+        <button 
+          @click="toggleSpeechRecognition" 
+          :class="['voice-btn', {'recording': isRecording}]"
+          :title="isRecording ? '点击停止录音' : '点击开始语音输入'"
+          :disabled="isLoading || speechStatus === 'connecting' || speechStatus === 'processing'"
+        >
+          <span class="mic-icon" v-if="!isRecording">🎤</span>
+          <span class="recording-icon" v-else>⏹️</span>
+        </button>
+        
         <button 
           @click="handleSendMessage" 
-          :disabled="isLoading || !userInput.trim()"
+          :disabled="isLoading || !userInput.trim() || isRecording"
         >
           发送
         </button>
+      </div>
+      
+      <!-- 语音识别状态提示 -->
+      <div v-if="speechStatus !== 'idle'" class="speech-status">
+        <span v-if="speechStatus === 'connecting'">正在连接语音服务...</span>
+        <span v-if="speechStatus === 'recording'" class="recording-status">正在录音...</span>
+        <span v-if="speechStatus === 'processing'">正在处理语音...</span>
+        <span v-if="speechStatus === 'error'" class="error-status">语音服务连接失败</span>
       </div>
     </div>
   </div>
@@ -276,6 +389,54 @@ button:hover {
 button:disabled {
   background-color: #ccc;
   cursor: not-allowed;
+}
+
+/* 语音按钮样式 */
+.voice-btn {
+  padding: 0 12px;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-btn.recording {
+  background-color: #e74c3c;
+}
+
+.voice-btn.recording:hover {
+  background-color: #c0392b;
+}
+
+/* 语音识别状态提示 */
+.speech-status {
+  padding: 4px 10px;
+  font-size: 12px;
+  text-align: center;
+  background-color: #f8f8f8;
+  border-top: 1px solid #eee;
+  pointer-events: auto;
+}
+
+.recording-status {
+  color: #e74c3c;
+  animation: pulse 1.5s infinite;
+}
+
+.error-status {
+  color: #e74c3c;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 /* 加载动画 */
