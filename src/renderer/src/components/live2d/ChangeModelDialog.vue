@@ -2,7 +2,10 @@
   <div class="model-dialog-overlay" v-if="show" @click.self="closeDialog">
     <div class="model-dialog">
       <div class="dialog-header">
-        <h3>模型换装</h3>
+        <div>
+          <h3>模型换装</h3>
+          <small>单击选中模型，双击确认选择</small>
+        </div>
         <button class="close-btn" @click="closeDialog">×</button>
       </div>
       <div class="dialog-content">
@@ -13,6 +16,7 @@
             class="model-item"
             :class="{ 'selected': selectedModel === model.path }"
             @click="selectModel(model.path)"
+            @dblclick="confirmModelChange(model.path)"
           >
             <img :src="model.thumbnail" :alt="model.name">
             <div class="model-name">{{ model.name }}</div>
@@ -28,77 +32,62 @@
 </template>
 
 <script setup>
-import { ref, defineProps, defineEmits } from 'vue';
+import { ref, defineProps, defineEmits, watch } from 'vue';
 
 const props = defineProps({
   show: {
     type: Boolean,
     default: false
+  },
+  // 添加模型列表属性，从父组件传入
+  modelList: {
+    type: Array,
+    default: () => []
+  },
+  currentModelPath: {
+    type: String,
+    default: ''
   }
 });
 
 const emit = defineEmits(['close', 'changeModel']);
 
-// 示例模型列表，实际使用时可以从外部传入或从配置文件读取
-const modelList = ref([
-  {
-    name: '拉菲',
-    path: 'models/lafei/lafei.model3.json',
-    thumbnail: 'models/lafei/thumbnail.png'
-  },
-  {
-    name: '爱尔德里奇5',
-    path: 'models/aierdeliqi_5/aierdeliqi_5.model3.json',
-    thumbnail: 'models/aierdeliqi_5/thumbnail.png'
-  },
-  {
-    name: '爱尔德里奇4',
-    path: 'models/aierdeliqi_4/aierdeliqi_4.model3.json',
-    thumbnail: 'models/aierdeliqi_4/thumbnail.png'
-  },
-  {
-    name: '爱丹2',
-    path: 'models/aidang_2/aidang_2.model3.json',
-    thumbnail: 'models/aidang_2/thumbnail.png'
-  },
-  // 下面添加更多测试数据以验证滚动效果
-  {
-    name: 'bisimai_2',
-    path: 'models/bisimai_2/bisimai_2.model3.json',
-    thumbnail: 'models/bisimai_2/thumbnail.png'
-  },
-  {
-    name: '模型6',
-    path: 'models/aierdeliqi_5/aierdeliqi_5.model3.json',
-    thumbnail: 'models/aierdeliqi_5/thumbnail.png'
-  },
-  {
-    name: '模型7',
-    path: 'models/aierdeliqi_4/aierdeliqi_4.model3.json',
-    thumbnail: 'models/aierdeliqi_4/thumbnail.png'
-  },
-  {
-    name: '模型8',
-    path: 'models/aidang_2/aidang_2.model3.json',
-    thumbnail: 'models/aidang_2/thumbnail.png'
+// 初始化选中的模型
+const selectedModel = ref(props.currentModelPath || '');
+
+// 监听当前模型路径变化
+watch(() => props.currentModelPath, (newPath) => {
+  if (newPath) {
+    selectedModel.value = newPath;
   }
-]);
+});
 
-const selectedModel = ref('');
-
+// 选择模型
 const selectModel = (path) => {
+  console.log('点击选择模型:', path);
   selectedModel.value = path;
 };
 
+// 关闭对话框
 const closeDialog = () => {
   emit('close');
 };
 
+// 确认换装
 const confirmChange = () => {
   if (selectedModel.value) {
     emit('changeModel', selectedModel.value);
     closeDialog();
+  } else {
+    alert('请选择一个模型');
   }
+};
+
+// 双击确认换装
+const confirmModelChange = (path) => {
+  console.log('双击选择模型:', path);
+  emit('changeModel', path);
+  closeDialog();
 };
 </script>
 
@@ -113,34 +102,46 @@ const confirmChange = () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 9999; /* 非常高的z-index，确保在最顶层 */
   -webkit-app-region: no-drag;
   app-region: no-drag;
+  pointer-events: auto; /* 确保对话框可以接收鼠标事件 */
 }
 
 .model-dialog {
   width: 80%;
   max-width: 600px;
-  max-height: 80vh; /* 限制最大高度为视口的80% */
+  height: 80vh; /* 固定高度为视口的80% */
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-  overflow: hidden;
   display: flex;
-  flex-direction: column; /* 确保弹窗内容垂直排列 */
+  flex-direction: column;
+  position: relative;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .dialog-header {
+  padding: 15px 20px;
+  border-bottom: 1px solid #eee;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 15px 20px;
-  border-bottom: 1px solid #eee;
+  flex-shrink: 0; /* 防止头部压缩 */
 }
 
 .dialog-header h3 {
   margin: 0;
   color: #333;
+}
+
+.dialog-header small {
+  display: block;
+  margin-top: 4px;
+  color: #666;
+  font-size: 12px;
 }
 
 .close-btn {
@@ -157,6 +158,9 @@ const confirmChange = () => {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .close-btn:hover {
@@ -164,16 +168,18 @@ const confirmChange = () => {
 }
 
 .dialog-content {
-  padding: 15px;
-  overflow-y: auto;
   flex: 1;
-  max-height: 60vh;
+  overflow-y: auto;
+  padding: 15px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .models-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 15px;
 }
 
 .model-item {
@@ -185,6 +191,9 @@ const confirmChange = () => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .model-item:hover {
@@ -195,17 +204,31 @@ const confirmChange = () => {
 .model-item.selected {
   border-color: #4a90e2;
   background-color: rgba(74, 144, 226, 0.1);
+  position: relative;
+}
+
+.model-item.selected::after {
+  content: '双击确认';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: rgba(74, 144, 226, 0.8);
+  color: white;
+  font-size: 10px;
+  padding: 2px 0;
+  text-align: center;
 }
 
 .model-item img {
   width: 100%;
-  height: 80px;
+  height: 90px;
   object-fit: cover;
   border-radius: 5px;
 }
 
 .model-name {
-  margin-top: 3px;
+  margin-top: 5px;
   font-size: 12px;
   text-align: center;
   color: #333;
@@ -217,23 +240,29 @@ const confirmChange = () => {
 }
 
 .dialog-footer {
-  padding: 12px 15px;
+  padding: 15px;
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+  justify-content: center; /* 居中显示按钮 */
+  gap: 15px;
   border-top: 1px solid #eee;
-  position: sticky;
-  bottom: 0;
   background-color: white;
-  z-index: 10;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  z-index: 10000; /* 超高的z-index确保按钮在最顶层 */
+  margin-top: 10px; /* 增加与内容区域的间距 */
 }
 
 .cancel-btn, .confirm-btn {
-  padding: 6px 12px;
+  padding: 8px 16px;
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
+  font-weight: 500;
   border: none;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .cancel-btn {
@@ -287,6 +316,10 @@ const confirmChange = () => {
     color: #f0f0f0;
   }
   
+  .dialog-header small {
+    color: #aaa;
+  }
+  
   .close-btn {
     color: #aaa;
   }
@@ -304,18 +337,6 @@ const confirmChange = () => {
     border-top: 1px solid #333;
   }
   
-  .dialog-content::-webkit-scrollbar-track {
-    background: #333;
-  }
-  
-  .dialog-content::-webkit-scrollbar-thumb {
-    background: #666;
-  }
-  
-  .dialog-content::-webkit-scrollbar-thumb:hover {
-    background: #888;
-  }
-  
   .cancel-btn {
     background-color: #333;
     color: #ddd;
@@ -330,12 +351,12 @@ const confirmChange = () => {
 @media (max-width: 480px) {
   .model-dialog {
     width: 95%;
-    max-height: 90vh;
+    height: 90vh;
   }
   
   .models-grid {
-    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 10px;
   }
   
   .model-item img {
@@ -353,5 +374,14 @@ const confirmChange = () => {
   .dialog-content {
     padding: 10px;
   }
+  
+  .dialog-footer {
+    padding: 10px;
+  }
+  
+  .cancel-btn, .confirm-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
 }
-</style> 
+</style>
