@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, clipboard } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import path from 'path'
+import fs from 'fs'
 
 // Custom APIs for renderer
 const api = {
@@ -56,7 +57,7 @@ const api = {
   writeClipboardText: (text) => ipcRenderer.invoke('write-clipboard-text', text),
   // 直接在渲染进程中操作剪贴板的方法
   getClipboardText: () => clipboard.readText(),
-  setClipboardText: (text) => clipboard.writeText(text),
+  setClipboardText: (text) => clipboard.writeText(text)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

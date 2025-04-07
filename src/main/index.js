@@ -475,11 +475,20 @@ app.whenReady().then(async () => {
     })
   })
   
-  // 获取资源路径
-  ipcMain.handle('get-resource-path', (event, relativePath) => {
-    // 返回资源文件的绝对路径
-    return path.join(app.getAppPath(), relativePath);
-  })
+  // 处理获取资源路径的请求
+  ipcMain.handle('get-resource-path', (_, relativePath) => {
+    // 将相对路径转换为绝对路径
+    const resourcePath = path.join(app.getAppPath(), 'resources', relativePath);
+    console.log(`请求资源路径: ${relativePath} -> ${resourcePath}`);
+    
+    // 检查文件是否存在
+    if (fs.existsSync(resourcePath)) {
+      return resourcePath;
+    } else {
+      console.error(`资源文件不存在: ${resourcePath}`);
+      return null;
+    }
+  });
   
   // 添加一个新的IPC处理器，用于启动所有MCP服务器
   ipcMain.on('start-all-mcp-servers', async (event) => {

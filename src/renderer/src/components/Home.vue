@@ -2,7 +2,7 @@
 import Versions from './Versions.vue'
 import Live2D from './live2d/index.vue'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { SpeechRecognition } from './speech/speechRecognition.js'
+import SpeechRecognizer from './audio/SpeechRecognizer.vue'
 
 const ipcHandle = () => window.electron.ipcRenderer.send('ping')
 
@@ -14,92 +14,66 @@ const isLoading = ref(false)
 // 语音识别相关状态
 const isRecording = ref(false)
 const speechStatus = ref('idle') // idle, connecting, recording, processing, error
-const speechRecognition = ref(null)
+const speechRecognizer = ref(null)
 // 语音识别服务地址直接写死在代码中
 const asrServerUrl = 'ws://127.0.0.1:10096/'
 
 // 初始化语音识别
 onMounted(() => {
-  // 确保全局Recorder对象已加载
-  const checkRecorderLoaded = () => {
-    if (typeof window.Recorder === 'undefined') {
-      console.warn('Recorder对象未加载，将在500ms后重试');
-      setTimeout(initSpeechRecognition, 500);
-    } else {
-      initSpeechRecognition();
-    }
-  };
-  
-  // 初始化语音识别实例
-  const initSpeechRecognition = () => {
-    try {
-      speechRecognition.value = new SpeechRecognition({
-        serverUrl: asrServerUrl,
-        onResult: (text, isFinal) => {
-          userInput.value = text
-          if (isFinal) {
-            speechStatus.value = 'idle'
-            isRecording.value = false
-          }
-        },
-        onStateChange: (state) => {
-          switch (state) {
-            case 'connecting':
-              speechStatus.value = 'connecting'
-              break
-            case 'connected':
-              speechStatus.value = 'connected'
-              break
-            case 'recording':
-              speechStatus.value = 'recording'
-              isRecording.value = true
-              break
-            case 'stopped':
-              speechStatus.value = 'processing'
-              break
-            case 'disconnected':
-              speechStatus.value = 'idle'
-              isRecording.value = false
-              break
-            case 'error':
-              speechStatus.value = 'error'
-              isRecording.value = false
-              break
-          }
-        }
-      });
-      console.log('语音识别模块初始化成功');
-    } catch (error) {
-      console.error('语音识别初始化失败:', error);
-      speechStatus.value = 'error';
-    }
-  };
-  
-  // 开始检查Recorder是否已加载
-  checkRecorderLoaded();
+  // 不再需要监听recorder-scripts-loaded事件，因为我们使用了自己的组件
+  console.log('组件已挂载，语音识别组件将自动初始化');
 })
 
 onBeforeUnmount(() => {
   // 清理语音识别资源
-  if (speechRecognition.value && isRecording.value) {
-    speechRecognition.value.stop()
+  if (speechRecognizer.value && isRecording.value) {
+    speechRecognizer.value.stopRecognition()
   }
 })
 
+// 处理语音识别结果
+const handleRecognitionResult = (result) => {
+  console.log('收到语音识别结果:', result);
+  if (result && result.result) {
+    userInput.value = result.result;
+  }
+}
+
+// 处理语音识别状态变化
+const handleRecognitionStart = () => {
+  isRecording.value = true;
+  speechStatus.value = 'recording';
+}
+
+const handleRecognitionStop = () => {
+  isRecording.value = false;
+  speechStatus.value = 'idle';
+}
+
+const handleConnectionOpen = () => {
+  speechStatus.value = 'connected';
+}
+
+const handleConnectionError = () => {
+  speechStatus.value = 'error';
+}
+
 // 处理语音识别
 const toggleSpeechRecognition = () => {
+  if (!speechRecognizer.value) {
+    console.error('语音识别组件未初始化');
+    speechStatus.value = 'error';
+    return;
+  }
+  
   if (isRecording.value) {
     // 停止录音
-    speechRecognition.value.stop()
-    isRecording.value = false
-    speechStatus.value = 'processing'
+    speechRecognizer.value.stopRecognition();
+    speechStatus.value = 'processing';
   } else {
     // 开始录音
-    if (speechRecognition.value.start(asrServerUrl)) {
-      speechStatus.value = 'connecting'
-    } else {
-      speechStatus.value = 'error'
-    }
+    speechRecognizer.value.startRecognition();
+    speechStatus.value = 'connecting';
   }
 }
 
@@ -180,20 +154,17 @@ const handleKeyDown = (event) => {
     <div class="chat-container">
       <!-- 聊天历史记录 -->
       <div class="chat-history">
-        <div 
-          v-for="(message, index) in chatHistory" 
-          :key="index" 
-          :class="['message', message.role]"
-        >
-          <div class="message-content">{{ message.content }}</div>
-        </div>
-        
-        <div v-if="isLoading" class="message assistant loading">
-          <div class="typing-indicator">
-            <span></span>
-            <span></span>
-            <span></span>
+        <div v-for="(message, index) in chatHistory" :key="index" class="message" :class="message.role">
+          <div v-if="message.role === 'user'" class="message-header">
+            <span class="user-tag">用户</span>
           </div>
+          <div v-else-if="message.role === 'assistant'" class="message-header">
+            <span class="assistant-tag">助手</span>
+          </div>
+          <div v-else class="message-header">
+            <span class="error-tag">错误</span>
+          </div>
+          <div class="message-content">{{ message.content }}</div>
         </div>
       </div>
       
@@ -203,35 +174,58 @@ const handleKeyDown = (event) => {
           v-model="userInput" 
           @keydown="handleKeyDown" 
           placeholder="输入消息..." 
-          :disabled="isLoading || isRecording"
+          :disabled="isLoading"
         ></textarea>
         
-        <!-- 语音识别按钮 -->
-        <button 
-          @click="toggleSpeechRecognition" 
-          :class="['voice-btn', {'recording': isRecording}]"
-          :title="isRecording ? '点击停止录音' : '点击开始语音输入'"
-          :disabled="isLoading || speechStatus === 'connecting' || speechStatus === 'processing'"
-        >
-          <span class="mic-icon" v-if="!isRecording">🎤</span>
-          <span class="recording-icon" v-else>⏹️</span>
-        </button>
+        <div class="input-controls">
+          <button 
+            class="speech-button" 
+            :class="{ 'recording': isRecording }"
+            @click="toggleSpeechRecognition"
+            :disabled="isLoading || speechStatus === 'connecting' || speechStatus === 'processing'"
+          >
+            <span v-if="isRecording">停止录音</span>
+            <span v-else>语音输入</span>
+          </button>
+          
+          <button 
+            @click="handleSendMessage" 
+            class="send-button"
+            :disabled="isLoading || !userInput.trim()"
+          >
+            发送
+          </button>
+        </div>
         
-        <button 
-          @click="handleSendMessage" 
-          :disabled="isLoading || !userInput.trim() || isRecording"
-        >
-          发送
-        </button>
+        <!-- 语音识别状态提示 -->
+        <div v-if="speechStatus !== 'idle'" class="speech-status">
+          <span v-if="speechStatus === 'connecting'">正在连接语音服务...</span>
+          <span v-if="speechStatus === 'recording'" class="recording-status">正在录音...</span>
+          <span v-if="speechStatus === 'processing'">正在处理语音...</span>
+          <span v-if="speechStatus === 'error'" class="error-status">语音服务连接失败</span>
+        </div>
       </div>
-      
-      <!-- 语音识别状态提示 -->
-      <div v-if="speechStatus !== 'idle'" class="speech-status">
-        <span v-if="speechStatus === 'connecting'">正在连接语音服务...</span>
-        <span v-if="speechStatus === 'recording'" class="recording-status">正在录音...</span>
-        <span v-if="speechStatus === 'processing'">正在处理语音...</span>
-        <span v-if="speechStatus === 'error'" class="error-status">语音服务连接失败</span>
-      </div>
+    </div>
+    
+    <!-- 加载状态 -->
+    <div v-if="isLoading" class="loading-overlay">
+      <div class="loading-spinner"></div>
+    </div>
+    
+    <!-- 语音识别组件 (隐藏) -->
+    <div style="display: none;">
+      <SpeechRecognizer
+        ref="speechRecognizer"
+        :server-url="asrServerUrl"
+        :sample-rate="16000"
+        :mime-type="'audio/wav'"
+        :show-status="false"
+        @recognition-result="handleRecognitionResult"
+        @recognition-start="handleRecognitionStart"
+        @recognition-stop="handleRecognitionStop"
+        @connection-open="handleConnectionOpen"
+        @connection-error="handleConnectionError"
+      />
     </div>
   </div>
 </template>
@@ -392,7 +386,7 @@ button:disabled {
 }
 
 /* 语音按钮样式 */
-.voice-btn {
+.speech-button {
   padding: 0 12px;
   font-size: 18px;
   display: flex;
@@ -400,11 +394,11 @@ button:disabled {
   justify-content: center;
 }
 
-.voice-btn.recording {
+.speech-button.recording {
   background-color: #e74c3c;
 }
 
-.voice-btn.recording:hover {
+.speech-button.recording:hover {
   background-color: #c0392b;
 }
 
@@ -446,39 +440,31 @@ button:disabled {
   justify-content: center;
 }
 
-.typing-indicator {
-  display: flex;
-  align-items: center;
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.5);
+  z-index: 1001;
 }
 
-.typing-indicator span {
-  height: 8px;
-  width: 8px;
-  background-color: #42b883;
+.loading-spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #42b883;
   border-radius: 50%;
-  display: inline-block;
-  margin: 0 2px;
-  animation: bouncing 1.2s infinite ease-in-out;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
 }
 
-.typing-indicator span:nth-child(1) {
-  animation-delay: 0s;
-}
-
-.typing-indicator span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.typing-indicator span:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes bouncing {
-  0%, 100% {
-    transform: translateY(0);
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
   }
-  50% {
-    transform: translateY(-5px);
+  100% {
+    transform: rotate(360deg);
   }
 }
 </style> 

@@ -8,16 +8,14 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; media-src 'self' file:; font-src 'self' data:; connect-src 'self' file: ws: wss:;"
     />
-    
-    <!-- 语音识别相关脚本 -->
-    <script src="../../resources/speech/recorder-core.js"></script>
-    <script src="../../resources/speech/wav.js"></script>
-    <script src="../../resources/speech/pcm.js"></script>
   </head>
 
   <body>
     <div id="app"></div>
+    <!-- 先加载Live2D库 -->
     <script src="../../resources/live2d/live2dcubismcore.min.js"></script>
+    
+    <!-- 最后加载主应用模块 -->
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

@@ -84,21 +84,67 @@ class WebSocketConnectMethod {
 // 语音识别服务类
 export class SpeechRecognition {
   constructor(config = {}) {
+    // 保存配置
     this.serverUrl = config.serverUrl || 'ws://127.0.0.1:10096/';
     this.onResult = config.onResult || (() => {});
     this.onStateChange = config.onStateChange || (() => {});
     
+    // 初始化状态
     this.isRecording = false;
     this.sampleBuf = new Int16Array();
     this.rec = null;
     this.wsconnecter = null;
     this.recText = '';
+    this.initialized = false;
     
     // 初始化WebSocket连接器
     this.wsconnecter = new WebSocketConnectMethod({
       msgHandle: (e) => this.handleMessage(e),
       stateHandle: (state) => this.handleStateChange(state)
     });
+    
+    // 检查Recorder对象
+    this.checkRecorder();
+  }
+  
+  // 检查Recorder对象是否可用
+  checkRecorder() {
+    console.log("检查Recorder对象...");
+    
+    if (typeof window.Recorder !== 'undefined') {
+      console.log("Recorder对象存在，开始初始化...");
+      this.initialized = this.initRecorder();
+      if (this.initialized) {
+        console.log("语音识别初始化成功");
+      } else {
+        console.error("语音识别初始化失败");
+      }
+    } else {
+      console.error("Recorder对象未定义");
+      
+      // 如果脚本加载完成事件尚未触发，则监听它
+      window.addEventListener('recorder-scripts-loaded', () => {
+        console.log("检测到脚本加载完成，重新检查Recorder");
+        setTimeout(() => {
+          if (typeof window.Recorder !== 'undefined') {
+            console.log("Recorder对象现在可用，重新初始化");
+            this.initialized = this.initRecorder();
+            if (this.initialized) {
+              console.log("语音识别初始化成功");
+              this.onStateChange('ready');
+            }
+          } else {
+            console.error("即使在脚本加载后，Recorder对象仍未定义");
+            this.onStateChange('error');
+          }
+        }, 500);
+      }, { once: true });
+    }
+  }
+  
+  // 检查是否初始化成功
+  isInitialized() {
+    return this.initialized === true;
   }
 
   // 处理WebSocket消息
@@ -135,37 +181,41 @@ export class SpeechRecognition {
   // 初始化录音
   initRecorder() {
     // 确保全局有Recorder对象
-    if (typeof Recorder !== 'undefined') {
-      try {
-        this.rec = new Recorder({
-          type: 'pcm',
-          bitRate: 16,
-          sampleRate: 16000,
-          onProcess: (buffer, powerLevel, bufferDuration, bufferSampleRate, newBufferIdx, asyncEnd) => {
-            if (this.isRecording) {
-              const data_48k = buffer[buffer.length - 1];
-              const array_48k = [data_48k];
-              const data_16k = Recorder.SampleData(array_48k, bufferSampleRate, 16000).data;
-              
-              this.sampleBuf = Int16Array.from([...this.sampleBuf, ...data_16k]);
-              const chunk_size = 960; // 设定的块大小
-              
-              while (this.sampleBuf.length >= chunk_size) {
-                const sendBuf = this.sampleBuf.slice(0, chunk_size);
-                this.sampleBuf = this.sampleBuf.slice(chunk_size, this.sampleBuf.length);
-                this.wsconnecter.wsSend(sendBuf);
-              }
+    if (typeof window.Recorder === 'undefined') {
+      console.error("Recorder对象未定义，无法初始化录音");
+      return false;
+    }
+    
+    try {
+      console.log("开始初始化录音组件...");
+      
+      // 创建Recorder实例
+      this.rec = new window.Recorder({
+        type: 'pcm',
+        bitRate: 16,
+        sampleRate: 16000,
+        onProcess: (buffer, powerLevel, bufferDuration, bufferSampleRate, newBufferIdx, asyncEnd) => {
+          if (this.isRecording) {
+            const data_48k = buffer[buffer.length - 1];
+            const array_48k = [data_48k];
+            const data_16k = window.Recorder.SampleData(array_48k, bufferSampleRate, 16000).data;
+            
+            this.sampleBuf = Int16Array.from([...this.sampleBuf, ...data_16k]);
+            const chunk_size = 960; // 设定的块大小
+            
+            while (this.sampleBuf.length >= chunk_size) {
+              const sendBuf = this.sampleBuf.slice(0, chunk_size);
+              this.sampleBuf = this.sampleBuf.slice(chunk_size, this.sampleBuf.length);
+              this.wsconnecter.wsSend(sendBuf);
             }
           }
-        });
-        console.log("录音初始化成功");
-        return true;
-      } catch (error) {
-        console.error("录音初始化出错:", error);
-        return false;
-      }
-    } else {
-      console.error("Recorder对象未定义，请确保recorder-core.js已正确加载");
+        }
+      });
+      
+      console.log("录音初始化成功");
+      return true;
+    } catch (error) {
+      console.error("录音初始化出错:", error);
       return false;
     }
   }
@@ -202,53 +252,80 @@ export class SpeechRecognition {
     });
   }
 
-  // 启动语音识别
+  // 启动语音识别 - 增加初始化检查
   start(customServerUrl) {
+    // 检查是否初始化成功
+    if (!this.isInitialized()) {
+      console.error('语音识别未初始化，无法启动');
+      this.onStateChange('error');
+      return false;
+    }
+    
     this.recText = '';
     const url = customServerUrl || this.serverUrl;
     
     // 先尝试连接服务器
-    const ret = this.wsconnecter.wsStart(url);
-    if (ret === 1) {
-      this.onStateChange('connecting');
-      return true;
-    } else {
+    try {
+      const ret = this.wsconnecter.wsStart(url);
+      if (ret === 1) {
+        this.onStateChange('connecting');
+        return true;
+      } else {
+        this.onStateChange('error');
+        return false;
+      }
+    } catch (error) {
+      console.error('启动语音识别时出错:', error);
       this.onStateChange('error');
       return false;
     }
   }
 
-  // 停止语音识别
+  // 停止语音识别 - 增加错误处理
   stop() {
-    // 发送结束指令
-    if (this.sampleBuf.length > 0) {
-      this.wsconnecter.wsSend(this.sampleBuf);
-      this.sampleBuf = new Int16Array();
+    try {
+      // 检查是否初始化成功
+      if (!this.isInitialized()) {
+        console.error('语音识别未初始化，无法停止');
+        return false;
+      }
+      
+      // 发送结束指令
+      if (this.sampleBuf.length > 0) {
+        this.wsconnecter.wsSend(this.sampleBuf);
+        this.sampleBuf = new Int16Array();
+      }
+      
+      // 发送结束标志
+      const request = {
+        "chunk_size": [5, 10, 5],
+        "wav_name": "h5",
+        "is_speaking": false,
+        "chunk_interval": 10,
+        "mode": "2pass",
+      };
+      this.wsconnecter.wsSend(JSON.stringify(request));
+      
+      // 停止录音
+      if (this.rec) {
+        this.isRecording = false;
+        this.rec.stop();
+      }
+      
+      // 延迟关闭WebSocket，等待最终结果
+      setTimeout(() => {
+        if (this.wsconnecter) {
+          this.wsconnecter.wsStop();
+        }
+      }, 2000);
+      
+      this.onStateChange('stopped');
+      return true;
+    } catch (error) {
+      console.error('停止语音识别时出错:', error);
+      this.onStateChange('error');
+      return false;
     }
-    
-    // 发送结束标志
-    const request = {
-      "chunk_size": [5, 10, 5],
-      "wav_name": "h5",
-      "is_speaking": false,
-      "chunk_interval": 10,
-      "mode": "2pass",
-    };
-    this.wsconnecter.wsSend(JSON.stringify(request));
-    
-    // 停止录音
-    if (this.rec) {
-      this.isRecording = false;
-      this.rec.stop();
-    }
-    
-    // 延迟关闭WebSocket，等待最终结果
-    setTimeout(() => {
-      this.wsconnecter.wsStop();
-    }, 2000);
-    
-    this.onStateChange('stopped');
-    return true;
   }
 }
 
