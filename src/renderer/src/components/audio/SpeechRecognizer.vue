@@ -7,11 +7,14 @@
         :sample-rate="sampleRate"
         :mime-type="mimeType"
         :auto-request-permission="autoRequestPermission"
+        :enable-realtime="enableRealtime"
+        :realtime-interval="realtimeInterval"
         @recording-start="handleRecordingStart"
         @recording-stop="handleRecordingStop"
         @recording-pause="handleRecordingPause"
         @recording-resume="handleRecordingResume"
         @recording-complete="handleRecordingComplete"
+        @realtime-data="handleRealtimeData"
         @error="handleRecorderError"
       />
       
@@ -24,6 +27,12 @@
           <p class="result-label">识别结果:</p>
           <p class="result-text">{{ recognitionResult }}</p>
         </div>
+        
+        <!-- 实时识别结果 -->
+        <div v-if="realtimeResult && realtimeResult !== recognitionResult" class="recognition-result realtime">
+          <p class="result-label">实时识别:</p>
+          <p class="result-text">{{ realtimeResult }}</p>
+        </div>
       </div>
     </div>
   </div>
@@ -32,6 +41,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import AudioRecorder from './AudioRecorder.vue';
+import { SpeechRecognition } from '../speech/speechRecognition.js';
 
 // 组件属性
 const props = defineProps({
@@ -64,6 +74,37 @@ const props = defineProps({
   autoConnect: {
     type: Boolean,
     default: false
+  },
+  // 处理超时时间(毫秒)
+  processingTimeout: {
+    type: Number,
+    default: 10000
+  },
+  // 是否启用实时识别
+  enableRealtime: {
+    type: Boolean,
+    default: true
+  },
+  // 实时数据发送间隔(毫秒)
+  realtimeInterval: {
+    type: Number,
+    default: 1000
+  },
+  // ASR模式
+  mode: {
+    type: String,
+    default: '2pass',
+    validator: value => ['offline', 'online', '2pass'].includes(value)
+  },
+  // 热词列表
+  hotwords: {
+    type: Array,
+    default: () => []
+  },
+  // 是否使用ITN(逆文本正则化)
+  useITN: {
+    type: Boolean,
+    default: true
   }
 });
 
@@ -71,7 +112,10 @@ const props = defineProps({
 const emit = defineEmits([
   'recognition-start',
   'recognition-stop',
+  'recognition-pause',
+  'recognition-resume',
   'recognition-result',
+  'recognition-realtime',
   'recognition-error',
   'connection-open',
   'connection-close',
@@ -86,185 +130,274 @@ const isConnected = ref(false);
 const isRecognizing = ref(false);
 const recognitionStatus = ref('');
 const recognitionResult = ref('');
+const realtimeResult = ref('');
 const webSocket = ref(null);
 const reconnectAttempts = ref(0);
 const maxReconnectAttempts = 3;
 const reconnectTimeout = ref(null);
+const processingTimeoutId = ref(null);
+
+// FunASR语音识别引擎
+const speechRecognition = ref(null);
 
 // 生命周期钩子
-onMounted(() => {
-  // 如果设置了自动连接，则连接到服务器
+onMounted(async () => {
+  console.log('SpeechRecognizer组件已挂载');
+  
+  // 初始化语音识别引擎
+  initSpeechRecognition();
+  
+  // 如果设置了自动连接，则检查服务器可用性并连接
   if (props.autoConnect) {
-    connectToServer();
+    const isAvailable = await checkServerAvailability();
+    if (isAvailable) {
+      // 服务可用，自动连接
+      console.log('服务可用，自动连接');
+    } else {
+      // 服务不可用
+      recognitionStatus.value = '语音识别服务不可用，请检查服务器';
+      emit('connection-error', new Error('语音识别服务不可用'));
+    }
   }
 });
 
 onUnmounted(() => {
-  // 断开连接
-  disconnectFromServer();
+  // 停止识别
+  stopRecognition();
   
   // 清理重连定时器
   if (reconnectTimeout.value) {
     clearTimeout(reconnectTimeout.value);
   }
+  
+  // 清理处理超时定时器
+  if (processingTimeoutId.value) {
+    clearTimeout(processingTimeoutId.value);
+  }
 });
 
 // 监听服务器URL变化
 watch(() => props.serverUrl, (newUrl, oldUrl) => {
-  if (newUrl !== oldUrl && isConnected.value) {
-    // 重新连接到新的服务器
-    disconnectFromServer();
-    connectToServer();
+  if (newUrl !== oldUrl) {
+    // 重新初始化语音识别引擎
+    initSpeechRecognition();
   }
 });
 
-// 连接到语音识别服务器
-const connectToServer = () => {
-  // 如果已经连接，则返回
-  if (isConnected.value || webSocket.value) {
-    return true;
+// 初始化FunASR语音识别引擎
+const initSpeechRecognition = () => {
+  // 如果已存在实例，先清理
+  if (speechRecognition.value) {
+    stopRecognition();
   }
   
+  // 创建新的语音识别实例
+  speechRecognition.value = new SpeechRecognition({
+    serverUrl: props.serverUrl,
+    mode: props.mode,
+    useITN: props.useITN,
+    hotwords: props.hotwords.length > 0 ? props.hotwords : null,
+    onResult: handleRecognitionResult,
+    onRealtimeResult: handleRealtimeResult,
+    onStateChange: handleRecognitionState
+  });
+  
+  console.log('语音识别引擎已初始化');
+};
+
+// 检查服务器是否可用
+const checkServerAvailability = async () => {
+  if (!speechRecognition.value) {
+    return false;
+  }
+  
+  recognitionStatus.value = '正在检查语音识别服务可用性...';
+  
   try {
-    // 更新状态
-    recognitionStatus.value = '正在连接语音识别服务...';
+    const isAvailable = await speechRecognition.value.checkServerAvailability();
+    isConnected.value = isAvailable;
     
-    // 创建WebSocket连接
-    webSocket.value = new WebSocket(props.serverUrl);
+    if (isAvailable) {
+      recognitionStatus.value = '语音识别服务可用';
+    } else {
+      recognitionStatus.value = '语音识别服务不可用，请检查服务器';
+    }
     
-    // 连接打开事件
-    webSocket.value.onopen = handleConnectionOpen;
-    
-    // 收到消息事件
-    webSocket.value.onmessage = handleMessage;
-    
-    // 连接关闭事件
-    webSocket.value.onclose = handleConnectionClose;
-    
-    // 连接错误事件
-    webSocket.value.onerror = handleConnectionError;
-    
-    return true;
+    return isAvailable;
   } catch (error) {
-    handleError(`连接到语音识别服务失败: ${error.message}`);
+    console.error('检查服务器可用性失败:', error);
+    recognitionStatus.value = '检查服务器可用性时出错';
+    isConnected.value = false;
     return false;
   }
 };
 
-// 断开与语音识别服务器的连接
-const disconnectFromServer = () => {
-  if (webSocket.value) {
-    // 关闭WebSocket连接
-    try {
-      webSocket.value.close();
-    } catch (error) {
-      console.error('关闭WebSocket连接失败:', error);
-    }
+// 开始语音识别
+const startRecognition = async () => {
+  if (isRecognizing.value) {
+    console.warn('已经在进行语音识别');
+    return false;
+  }
+  
+  if (!speechRecognition.value) {
+    console.error('语音识别引擎未初始化');
+    recognitionStatus.value = '语音识别引擎未初始化';
+    emit('recognition-error', new Error('语音识别引擎未初始化'));
+    return false;
+  }
+  
+  // 先检查服务器可用性
+  const isAvailable = await checkServerAvailability();
+  if (!isAvailable) {
+    console.error('语音识别服务不可用');
+    emit('recognition-error', new Error('语音识别服务不可用'));
+    return false;
+  }
+  
+  // 重置状态
+  recognitionResult.value = '';
+  realtimeResult.value = '';
+  reconnectAttempts.value = 0;
+  
+  // 开始识别
+  recognitionStatus.value = '正在启动语音识别...';
+  
+  try {
+    const success = await speechRecognition.value.start();
     
-    webSocket.value = null;
+    if (success) {
+      isRecognizing.value = true;
+      recognitionStatus.value = '正在录音...';
+      emit('recognition-start');
+      
+      // 设置处理超时
+      if (props.processingTimeout > 0) {
+        processingTimeoutId.value = setTimeout(() => {
+          // 如果超时仍在识别，则停止
+          if (isRecognizing.value) {
+            stopRecognition('timeout');
+          }
+        }, props.processingTimeout);
+      }
+      
+      return true;
+    } else {
+      recognitionStatus.value = '启动语音识别失败';
+      emit('recognition-error', new Error('启动语音识别失败'));
+      return false;
+    }
+  } catch (error) {
+    console.error('启动语音识别时出错:', error);
+    recognitionStatus.value = `启动语音识别出错: ${error.message}`;
+    emit('recognition-error', error);
+    return false;
+  }
+};
+
+// 停止语音识别
+const stopRecognition = (reason = 'user') => {
+  if (!isRecognizing.value) {
+    return false;
+  }
+  
+  // 清除处理超时定时器
+  if (processingTimeoutId.value) {
+    clearTimeout(processingTimeoutId.value);
+    processingTimeoutId.value = null;
+  }
+  
+  // 停止识别
+  if (speechRecognition.value) {
+    recognitionStatus.value = '正在停止语音识别...';
+    speechRecognition.value.stop();
   }
   
   // 更新状态
-  isConnected.value = false;
   isRecognizing.value = false;
+  recognitionStatus.value = reason === 'timeout' 
+    ? '语音识别超时' 
+    : '语音识别已停止';
+  
+  emit('recognition-stop', { reason });
+  return true;
 };
 
-// 发送音频数据到服务器
-const sendAudioData = (audioBlob) => {
-  if (!isConnected.value || !webSocket.value) {
-    handleError('未连接到语音识别服务');
-    return false;
-  }
+// 处理语音识别结果
+const handleRecognitionResult = (result) => {
+  console.log('收到语音识别结果:', result);
   
-  try {
-    // 发送音频数据
-    webSocket.value.send(audioBlob);
-    return true;
-  } catch (error) {
-    handleError(`发送音频数据失败: ${error.message}`);
-    return false;
-  }
-};
-
-// 尝试重新连接
-const attemptReconnect = () => {
-  if (reconnectAttempts.value >= maxReconnectAttempts) {
-    recognitionStatus.value = '重连失败，已达到最大重试次数';
-    return;
-  }
-  
-  reconnectAttempts.value++;
-  recognitionStatus.value = `正在尝试重新连接 (${reconnectAttempts.value}/${maxReconnectAttempts})...`;
-  
-  reconnectTimeout.value = setTimeout(() => {
-    connectToServer();
-  }, 2000); // 2秒后重试
-};
-
-// 处理WebSocket连接打开
-const handleConnectionOpen = (event) => {
-  isConnected.value = true;
-  reconnectAttempts.value = 0; // 重置重连次数
-  recognitionStatus.value = '已连接到语音识别服务';
-  
-  // 发出事件
-  emit('connection-open', event);
-};
-
-// 处理WebSocket消息
-const handleMessage = (event) => {
-  try {
-    // 解析服务器响应
-    const response = JSON.parse(event.data);
+  if (result && result.text) {
+    recognitionResult.value = result.text;
+    emit('recognition-result', {
+      text: result.text,
+      isFinal: result.isFinal || false
+    });
     
-    if (response.result) {
-      // 更新识别结果
-      recognitionResult.value = response.result;
-      
-      // 发出事件
-      emit('recognition-result', response);
+    // 如果是最终结果
+    if (result.isFinal) {
+      recognitionStatus.value = '语音识别完成';
+      // 清除超时定时器
+      if (processingTimeoutId.value) {
+        clearTimeout(processingTimeoutId.value);
+        processingTimeoutId.value = null;
+      }
     }
-  } catch (error) {
-    console.error('解析WebSocket消息失败:', error);
   }
 };
 
-// 处理WebSocket连接关闭
-const handleConnectionClose = (event) => {
-  isConnected.value = false;
+// 处理实时语音识别结果
+const handleRealtimeResult = (result) => {
+  if (!props.enableRealtime) return;
   
-  // 如果正在识别，则停止识别
-  if (isRecognizing.value) {
-    isRecognizing.value = false;
-    recognitionStatus.value = '语音识别已停止（连接已关闭）';
-    
-    // 发出事件
-    emit('recognition-stop', { reason: 'connection-closed' });
-  } else {
-    recognitionStatus.value = '与语音识别服务的连接已关闭';
-  }
+  console.log('收到实时语音识别结果:', result);
   
-  // 清理WebSocket
-  webSocket.value = null;
-  
-  // 发出事件
-  emit('connection-close', event);
-  
-  // 如果不是正常关闭，尝试重新连接
-  if (event.code !== 1000) {
-    attemptReconnect();
+  if (result && result.text) {
+    realtimeResult.value = result.text;
+    emit('recognition-realtime', {
+      text: result.text,
+      isFinal: false
+    });
   }
 };
 
-// 处理WebSocket连接错误
-const handleConnectionError = (error) => {
-  handleError(`与语音识别服务的连接发生错误: ${error.message || '未知错误'}`);
+// 处理语音识别状态变化
+const handleRecognitionState = (state) => {
+  console.log('语音识别状态变化:', state);
   
-  // 发出事件
-  emit('connection-error', error);
-  
-  // 尝试重新连接
-  attemptReconnect();
+  switch (state) {
+    case 'ready':
+      recognitionStatus.value = '语音识别就绪';
+      break;
+    case 'connecting':
+      recognitionStatus.value = '正在连接语音识别服务...';
+      emit('connection-open');
+      break;
+    case 'connected':
+      recognitionStatus.value = '已连接语音识别服务';
+      isConnected.value = true;
+      reconnectAttempts.value = 0;
+      emit('connection-open');
+      break;
+    case 'disconnected':
+      recognitionStatus.value = '语音识别服务连接已断开';
+      isConnected.value = false;
+      emit('connection-close');
+      break;
+    case 'recording':
+      recognitionStatus.value = '正在录音...';
+      break;
+    case 'stopped':
+      recognitionStatus.value = '语音识别已停止';
+      isRecognizing.value = false;
+      break;
+    case 'error':
+      recognitionStatus.value = '语音识别出错';
+      isRecognizing.value = false;
+      emit('recognition-error', new Error('语音识别出错'));
+      break;
+    default:
+      recognitionStatus.value = state;
+  }
 };
 
 // 处理录音开始
@@ -306,10 +439,17 @@ const handleRecordingResume = () => {
 
 // 处理录音完成
 const handleRecordingComplete = ({ blob, url, duration }) => {
+  console.log('录音完成，时长:', duration, '秒');
+  
   // 发送音频数据到服务器
   if (isConnected.value) {
-    sendAudioData(blob);
     recognitionStatus.value = '正在处理语音...';
+    sendAudioData(blob);
+  } else {
+    handleError('未连接到语音识别服务，无法处理语音');
+    
+    // 尝试重新连接
+    connectToServer();
   }
 };
 
@@ -323,50 +463,285 @@ const handleError = (message) => {
   console.error('语音识别错误:', message);
   recognitionStatus.value = `错误: ${message}`;
   
+  // 清理处理超时定时器
+  if (processingTimeoutId.value) {
+    clearTimeout(processingTimeoutId.value);
+    processingTimeoutId.value = null;
+  }
+  
   // 发出事件
   emit('recognition-error', new Error(message));
 };
 
-// 开始语音识别
-const startRecognition = () => {
-  if (audioRecorder.value) {
-    return audioRecorder.value.startRecording();
+// 处理实时音频数据
+const handleRealtimeData = ({ blob, duration }) => {
+  if (!isConnected.value || !webSocket.value) {
+    console.warn('未连接到语音识别服务，无法发送实时音频数据');
+    return;
+  }
+  
+  try {
+    console.log(`发送${duration}秒的实时音频数据`);
+    
+    // 发送音频数据
+    webSocket.value.send(blob);
+  } catch (error) {
+    console.error('发送实时音频数据失败:', error);
   }
 };
 
-// 停止语音识别
-const stopRecognition = () => {
-  if (audioRecorder.value) {
-    return audioRecorder.value.stopRecording();
+// 连接到语音识别服务器
+const connectToServer = async () => {
+  // 如果已经连接，则返回
+  if (isConnected.value || webSocket.value) {
+    return true;
+  }
+  
+  try {
+    // 更新状态
+    recognitionStatus.value = '正在连接语音识别服务...';
+    
+    console.log(`正在连接到语音识别服务: ${props.serverUrl}`);
+    
+    // 先检查服务器是否可用
+    const isAvailable = await checkServerAvailability();
+    if (!isAvailable) {
+      handleError('语音识别服务不可用，请检查服务器');
+      return false;
+    }
+    
+    // 创建WebSocket连接
+    webSocket.value = new WebSocket(props.serverUrl);
+    
+    // 连接打开事件
+    webSocket.value.onopen = handleConnectionOpen;
+    
+    // 收到消息事件
+    webSocket.value.onmessage = handleMessage;
+    
+    // 连接关闭事件
+    webSocket.value.onclose = handleConnectionClose;
+    
+    // 连接错误事件
+    webSocket.value.onerror = handleConnectionError;
+    
+    return true;
+  } catch (error) {
+    console.error('WebSocket连接创建失败:', error);
+    handleError(`连接到语音识别服务失败: ${error.message}`);
+    return false;
   }
 };
 
-// 暂停语音识别
-const pauseRecognition = () => {
-  if (audioRecorder.value) {
-    return audioRecorder.value.pauseRecording();
+// 断开与语音识别服务器的连接
+const disconnectFromServer = () => {
+  console.log('断开与语音识别服务的连接');
+  
+  // 清理处理超时定时器
+  if (processingTimeoutId.value) {
+    clearTimeout(processingTimeoutId.value);
+    processingTimeoutId.value = null;
+  }
+  
+  if (webSocket.value) {
+    // 关闭WebSocket连接
+    try {
+      webSocket.value.close();
+    } catch (error) {
+      console.error('关闭WebSocket连接失败:', error);
+    }
+    
+    webSocket.value = null;
+  }
+  
+  // 更新状态
+  isConnected.value = false;
+  isRecognizing.value = false;
+};
+
+// 发送音频数据到服务器
+const sendAudioData = (audioBlob) => {
+  if (!isConnected.value || !webSocket.value) {
+    handleError('未连接到语音识别服务');
+    return false;
+  }
+  
+  try {
+    console.log('发送音频数据到语音识别服务');
+    
+    // 设置处理超时
+    processingTimeoutId.value = setTimeout(() => {
+      console.warn(`语音处理超时(${props.processingTimeout}ms)`);
+      
+      // 发出错误事件
+      emit('recognition-error', new Error('语音处理超时'));
+      
+      // 更新状态
+      recognitionStatus.value = '语音处理超时，请重试';
+      
+      // 清理状态
+      processingTimeoutId.value = null;
+      
+      // 发出结束事件
+      emit('recognition-stop', { reason: 'timeout' });
+    }, props.processingTimeout);
+    
+    // 发送音频数据
+    webSocket.value.send(audioBlob);
+    return true;
+  } catch (error) {
+    console.error('发送音频数据失败:', error);
+    handleError(`发送音频数据失败: ${error.message}`);
+    return false;
   }
 };
 
-// 恢复语音识别
-const resumeRecognition = () => {
-  if (audioRecorder.value) {
-    return audioRecorder.value.resumeRecording();
+// 尝试重新连接
+const attemptReconnect = () => {
+  if (reconnectAttempts.value >= maxReconnectAttempts) {
+    recognitionStatus.value = '重连失败，已达到最大重试次数';
+    return;
+  }
+  
+  reconnectAttempts.value++;
+  recognitionStatus.value = `正在尝试重新连接 (${reconnectAttempts.value}/${maxReconnectAttempts})...`;
+  
+  reconnectTimeout.value = setTimeout(() => {
+    connectToServer();
+  }, 2000); // 2秒后重试
+};
+
+// 处理WebSocket连接打开
+const handleConnectionOpen = (event) => {
+  console.log('WebSocket连接已打开');
+  isConnected.value = true;
+  reconnectAttempts.value = 0; // 重置重连次数
+  recognitionStatus.value = '已连接到语音识别服务';
+  
+  // 发出事件
+  emit('connection-open', event);
+};
+
+// 处理WebSocket消息
+const handleMessage = (event) => {
+  try {
+    console.log('收到WebSocket消息:', event.data);
+    
+    // 清理处理超时定时器
+    if (processingTimeoutId.value) {
+      clearTimeout(processingTimeoutId.value);
+      processingTimeoutId.value = null;
+    }
+    
+    // 解析服务器响应
+    const response = JSON.parse(event.data);
+    
+    // 根据消息类型处理
+    if (response.type === 'partial' || response.partial || response.is_partial) {
+      // 处理实时识别结果
+      handleRealtimeResult(response);
+    } else if (response.result || response.text) {
+      // 处理最终识别结果
+      handleFinalResult(response);
+    }
+    
+    // 处理可能的错误信息
+    if (response.error) {
+      handleError(`服务器返回错误: ${response.error}`);
+    }
+  } catch (error) {
+    console.error('解析WebSocket消息失败:', error);
+    handleError(`解析语音识别结果失败: ${error.message}`);
   }
 };
 
-// 导出方法供父组件使用
+// 处理最终识别结果
+const handleFinalResult = (response) => {
+  // 提取结果文本
+  const text = response.result || response.text || '';
+  
+  // 更新识别结果
+  recognitionResult.value = text;
+  
+  // 更新状态
+  recognitionStatus.value = '语音识别完成';
+  
+  // 发出事件
+  emit('recognition-result', {
+    text,
+    isPartial: false,
+    originalResponse: response
+  });
+  
+  // 清空实时结果
+  realtimeResult.value = '';
+  
+  // 如果正在识别，则停止识别
+  if (isRecognizing.value) {
+    isRecognizing.value = false;
+    
+    // 发出停止事件
+    emit('recognition-stop', { reason: 'completed' });
+  }
+  
+  console.log('最终识别结果:', text);
+};
+
+// 处理WebSocket连接关闭
+const handleConnectionClose = (event) => {
+  console.log('WebSocket连接已关闭', event);
+  isConnected.value = false;
+  
+  // 如果正在识别，则停止识别
+  if (isRecognizing.value) {
+    isRecognizing.value = false;
+    recognitionStatus.value = '语音识别已停止（连接已关闭）';
+    
+    // 发出事件
+    emit('recognition-stop', { reason: 'connection-closed' });
+  } else {
+    recognitionStatus.value = '与语音识别服务的连接已关闭';
+  }
+  
+  // 清理WebSocket
+  webSocket.value = null;
+  
+  // 清理处理超时定时器
+  if (processingTimeoutId.value) {
+    clearTimeout(processingTimeoutId.value);
+    processingTimeoutId.value = null;
+  }
+  
+  // 发出事件
+  emit('connection-close', event);
+  
+  // 如果不是正常关闭，尝试重新连接
+  if (event.code !== 1000) {
+    attemptReconnect();
+  }
+};
+
+// 处理WebSocket连接错误
+const handleConnectionError = (error) => {
+  console.error('WebSocket连接错误:', error);
+  handleError(`与语音识别服务的连接发生错误: ${error.message || '未知错误'}`);
+  
+  // 发出事件
+  emit('connection-error', error);
+  
+  // 尝试重新连接
+  attemptReconnect();
+};
+
+// 暴露给父组件的方法
 defineExpose({
   startRecognition,
   stopRecognition,
-  pauseRecognition,
-  resumeRecognition,
-  connectToServer,
-  disconnectFromServer,
-  isConnected,
-  isRecognizing,
-  recognitionStatus,
-  recognitionResult
+  checkServerAvailability,
+  isRecognizing: () => isRecognizing.value,
+  isConnected: () => isConnected.value,
+  getRecognitionResult: () => recognitionResult.value,
+  getRealtimeResult: () => realtimeResult.value
 });
 </script>
 
@@ -406,6 +781,11 @@ defineExpose({
   border: 1px solid #e2e8f0;
 }
 
+.recognition-result.realtime {
+  background-color: #f8f9fa;
+  border: 1px dashed #e2e8f0;
+}
+
 .result-label {
   font-size: 12px;
   color: #718096;
@@ -417,5 +797,10 @@ defineExpose({
   color: #2d3748;
   margin: 0;
   line-height: 1.5;
+}
+
+.recognition-result.realtime .result-text {
+  color: #4a5568;
+  font-style: italic;
 }
 </style>

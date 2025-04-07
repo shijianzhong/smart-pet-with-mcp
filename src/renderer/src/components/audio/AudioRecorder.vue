@@ -63,6 +63,16 @@ const props = defineProps({
   autoRequestPermission: {
     type: Boolean,
     default: false
+  },
+  // 是否启用实时识别
+  enableRealtime: {
+    type: Boolean,
+    default: true
+  },
+  // 实时数据发送间隔(毫秒)
+  realtimeInterval: {
+    type: Number,
+    default: 1000
   }
 });
 
@@ -72,7 +82,8 @@ const emit = defineEmits([
   'recording-stop', 
   'recording-pause', 
   'recording-resume',
-  'recording-complete', 
+  'recording-complete',
+  'realtime-data',
   'error'
 ]);
 
@@ -93,6 +104,11 @@ const audioStream = ref(null);
 const audioChunks = ref([]);
 const volumeData = ref(new Uint8Array(0));
 const volumeBars = ref(Array(20).fill(0));
+
+// 实时音频数据相关
+const realtimeTimeoutId = ref(null);
+const lastSendTime = ref(0);
+const currentAudioChunks = ref([]);
 
 // 初始化音频上下文
 onMounted(async () => {
@@ -213,6 +229,8 @@ const startRecording = async () => {
     
     // 清空之前的录音数据
     audioChunks.value = [];
+    currentAudioChunks.value = [];
+    lastSendTime.value = Date.now();
     
     // 创建MediaRecorder实例
     const options = {
@@ -230,6 +248,11 @@ const startRecording = async () => {
     mediaRecorder.value.ondataavailable = (event) => {
       if (event.data.size > 0) {
         audioChunks.value.push(event.data);
+        
+        // 如果启用了实时识别，保存当前数据块用于发送
+        if (props.enableRealtime) {
+          currentAudioChunks.value.push(event.data);
+        }
       }
     };
     
@@ -243,8 +266,8 @@ const startRecording = async () => {
       handleError(new Error(`录音错误: ${event.error}`));
     };
     
-    // 开始录音
-    mediaRecorder.value.start(100); // 每100ms触发一次dataavailable事件
+    // 开始录音 - 每100ms触发一次dataavailable事件，更快地获取数据
+    mediaRecorder.value.start(100);
     
     // 设置录音状态
     isRecording.value = true;
@@ -257,6 +280,11 @@ const startRecording = async () => {
     
     // 开始更新音量指示器
     requestAnimationFrame(updateVolumeIndicator);
+    
+    // 如果启用了实时识别，开始定期发送音频数据
+    if (props.enableRealtime) {
+      startRealtimeDataSending();
+    }
     
     // 发出事件
     emit('recording-start');
@@ -308,23 +336,68 @@ const resumeRecording = () => {
 
 // 停止录音
 const stopRecording = () => {
-  if (!isRecording.value || !mediaRecorder.value) return;
+  if (!isRecording.value || !mediaRecorder.value || mediaRecorder.value.state !== 'recording') return;
   
   try {
-    if (mediaRecorder.value.state === 'recording' || mediaRecorder.value.state === 'paused') {
-      mediaRecorder.value.stop();
-      isProcessing.value = true;
-      recordingStatus.value = '正在处理录音...';
-      
-      // 停止计时
-      clearInterval(recordingTimer.value);
-      
-      // 发出事件
-      emit('recording-stop');
+    // 停止定期发送实时数据
+    if (realtimeTimeoutId.value) {
+      clearTimeout(realtimeTimeoutId.value);
+      realtimeTimeoutId.value = null;
     }
+    
+    mediaRecorder.value.stop();
+    isPaused.value = false;
+    recordingStatus.value = '录音已停止';
+    
+    // 暂停计时
+    clearInterval(recordingTimer.value);
+    
+    // 发出事件
+    emit('recording-stop');
   } catch (error) {
     handleError(error);
   }
+};
+
+// 开始定期发送实时音频数据
+const startRealtimeDataSending = () => {
+  // 清理之前的定时器
+  if (realtimeTimeoutId.value) {
+    clearTimeout(realtimeTimeoutId.value);
+  }
+  
+  const sendRealtimeData = () => {
+    if (!isRecording.value || isPaused.value || currentAudioChunks.value.length === 0) {
+      realtimeTimeoutId.value = setTimeout(sendRealtimeData, props.realtimeInterval);
+      return;
+    }
+    
+    try {
+      // 创建当前数据的Blob
+      const currentBlob = new Blob(currentAudioChunks.value, { type: props.mimeType });
+      
+      // 发出实时数据事件
+      emit('realtime-data', { 
+        blob: currentBlob, 
+        duration: Math.floor((Date.now() - lastSendTime.value) / 1000)
+      });
+      
+      // 更新最后发送时间
+      lastSendTime.value = Date.now();
+      
+      // 重置当前数据块 - 注意：这里我们不清空，以便累积数据
+      // 因为语音识别通常需要足够的上下文才能准确，所以我们保留之前的部分数据
+      
+      // 设置下一次发送
+      realtimeTimeoutId.value = setTimeout(sendRealtimeData, props.realtimeInterval);
+    } catch (error) {
+      console.error('发送实时音频数据失败:', error);
+      realtimeTimeoutId.value = setTimeout(sendRealtimeData, props.realtimeInterval);
+    }
+  };
+  
+  // 开始定期发送数据
+  realtimeTimeoutId.value = setTimeout(sendRealtimeData, props.realtimeInterval);
 };
 
 // 处理音频数据
@@ -341,6 +414,12 @@ const processAudioData = () => {
     isPaused.value = false;
     isProcessing.value = false;
     recordingStatus.value = '录音已完成';
+    
+    // 清理定时发送
+    if (realtimeTimeoutId.value) {
+      clearTimeout(realtimeTimeoutId.value);
+      realtimeTimeoutId.value = null;
+    }
     
     // 发出事件
     emit('recording-complete', { 

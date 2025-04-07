@@ -13,15 +13,33 @@ const isLoading = ref(false)
 
 // 语音识别相关状态
 const isRecording = ref(false)
-const speechStatus = ref('idle') // idle, connecting, recording, processing, error
+const speechStatus = ref('idle') // idle, connecting, recording, processing, error, timeout
 const speechRecognizer = ref(null)
-// 语音识别服务地址直接写死在代码中
+const serverAvailable = ref(false)
+const realtimeText = ref('') // 添加实时识别文本
+// 语音识别服务地址
 const asrServerUrl = 'ws://127.0.0.1:10096/'
+// 添加语音状态提示文本
+const statusMessages = {
+  idle: '',
+  connecting: '正在连接语音服务...',
+  recording: '正在录音...',
+  processing: '正在处理语音...',
+  error: '语音服务连接失败',
+  timeout: '语音处理超时，请重试',
+  completed: '语音识别完成',
+  unavailable: '语音服务不可用，请确保语音服务已启动'
+}
 
 // 初始化语音识别
 onMounted(() => {
   // 不再需要监听recorder-scripts-loaded事件，因为我们使用了自己的组件
   console.log('组件已挂载，语音识别组件将自动初始化');
+  
+  // 3秒后检查服务器是否可用
+  setTimeout(() => {
+    checkServerAvailability();
+  }, 3000);
 })
 
 onBeforeUnmount(() => {
@@ -31,11 +49,54 @@ onBeforeUnmount(() => {
   }
 })
 
+// 检查服务器是否可用
+const checkServerAvailability = async () => {
+  if (!speechRecognizer.value) return;
+  
+  try {
+    // 调用组件方法检查服务器可用性
+    const isAvailable = await speechRecognizer.value.checkServerAvailability();
+    serverAvailable.value = isAvailable;
+    
+    if (!isAvailable) {
+      speechStatus.value = 'unavailable';
+      console.warn('语音识别服务不可用，请确保服务已启动');
+    } else {
+      console.log('语音识别服务可用');
+      if (speechStatus.value === 'unavailable') {
+        speechStatus.value = 'idle';
+      }
+    }
+  } catch (error) {
+    console.error('检查服务器可用性失败:', error);
+    serverAvailable.value = false;
+    speechStatus.value = 'unavailable';
+  }
+};
+
 // 处理语音识别结果
 const handleRecognitionResult = (result) => {
   console.log('收到语音识别结果:', result);
-  if (result && result.result) {
-    userInput.value = result.result;
+  if (result && result.text) {
+    userInput.value = result.text;
+    // 清空实时文本
+    realtimeText.value = '';
+    // 设置状态为已完成
+    speechStatus.value = 'completed';
+    // 2秒后恢复idle状态
+    setTimeout(() => {
+      if (speechStatus.value === 'completed') {
+        speechStatus.value = 'idle';
+      }
+    }, 2000);
+  }
+}
+
+// 处理实时识别结果
+const handleRealtimeRecognition = (result) => {
+  console.log('收到实时识别结果:', result);
+  if (result && result.text) {
+    realtimeText.value = result.text;
   }
 }
 
@@ -43,37 +104,98 @@ const handleRecognitionResult = (result) => {
 const handleRecognitionStart = () => {
   isRecording.value = true;
   speechStatus.value = 'recording';
+  console.log('语音识别开始');
 }
 
-const handleRecognitionStop = () => {
+const handleRecognitionStop = (data) => {
   isRecording.value = false;
-  speechStatus.value = 'idle';
+  // 检查停止原因
+  if (data && data.reason) {
+    console.log('语音识别停止，原因:', data.reason);
+    if (data.reason === 'timeout') {
+      speechStatus.value = 'timeout';
+      // 3秒后恢复idle状态
+      setTimeout(() => {
+        if (speechStatus.value === 'timeout') {
+          speechStatus.value = 'idle';
+        }
+      }, 3000);
+    } else if (data.reason === 'completed') {
+      speechStatus.value = 'completed';
+    } else {
+      speechStatus.value = 'idle';
+    }
+  } else {
+    speechStatus.value = 'idle';
+  }
 }
 
 const handleConnectionOpen = () => {
   speechStatus.value = 'connected';
+  serverAvailable.value = true;
+  console.log('WebSocket连接已打开');
 }
 
-const handleConnectionError = () => {
+const handleConnectionError = (error) => {
+  serverAvailable.value = false;
   speechStatus.value = 'error';
+  console.error('WebSocket连接错误:', error);
+  // 3秒后恢复idle状态或标记为不可用
+  setTimeout(() => {
+    if (speechStatus.value === 'error') {
+      // 再次检查服务器可用性
+      checkServerAvailability();
+    }
+  }, 3000);
 }
 
 // 处理语音识别
-const toggleSpeechRecognition = () => {
+const toggleSpeechRecognition = async () => {
+  console.log('切换语音识别状态，当前状态:', isRecording.value);
+  
   if (!speechRecognizer.value) {
     console.error('语音识别组件未初始化');
     speechStatus.value = 'error';
     return;
   }
   
+  // 检查服务器是否可用
+  if (!serverAvailable.value && !isRecording.value) {
+    // 先检查服务器可用性
+    const isAvailable = await speechRecognizer.value.checkServerAvailability();
+    serverAvailable.value = isAvailable;
+    
+    if (!isAvailable) {
+      speechStatus.value = 'unavailable';
+      setTimeout(() => {
+        if (speechStatus.value === 'unavailable') {
+          speechStatus.value = 'idle';
+        }
+      }, 3000);
+      return;
+    }
+  }
+  
   if (isRecording.value) {
     // 停止录音
+    console.log('停止录音');
     speechRecognizer.value.stopRecognition();
     speechStatus.value = 'processing';
   } else {
     // 开始录音
-    speechRecognizer.value.startRecognition();
-    speechStatus.value = 'connecting';
+    console.log('开始录音');
+    const started = await speechRecognizer.value.startRecognition();
+    if (started) {
+      speechStatus.value = 'connecting';
+    } else {
+      speechStatus.value = 'error';
+      // 3秒后恢复idle状态
+      setTimeout(() => {
+        if (speechStatus.value === 'error') {
+          speechStatus.value = 'idle';
+        }
+      }, 3000);
+    }
   }
 }
 
@@ -170,12 +292,19 @@ const handleKeyDown = (event) => {
       
       <!-- 输入框区域 -->
       <div class="input-container">
-        <textarea 
-          v-model="userInput" 
-          @keydown="handleKeyDown" 
-          placeholder="输入消息..." 
-          :disabled="isLoading"
-        ></textarea>
+        <div class="input-wrapper">
+          <textarea 
+            v-model="userInput" 
+            @keydown="handleKeyDown" 
+            placeholder="输入消息..." 
+            :disabled="isLoading"
+          ></textarea>
+          
+          <!-- 实时识别结果 -->
+          <div v-if="realtimeText && isRecording" class="realtime-text">
+            {{ realtimeText }}
+          </div>
+        </div>
         
         <div class="input-controls">
           <button 
@@ -199,10 +328,13 @@ const handleKeyDown = (event) => {
         
         <!-- 语音识别状态提示 -->
         <div v-if="speechStatus !== 'idle'" class="speech-status">
-          <span v-if="speechStatus === 'connecting'">正在连接语音服务...</span>
-          <span v-if="speechStatus === 'recording'" class="recording-status">正在录音...</span>
-          <span v-if="speechStatus === 'processing'">正在处理语音...</span>
-          <span v-if="speechStatus === 'error'" class="error-status">语音服务连接失败</span>
+          <span v-if="speechStatus === 'connecting'">{{ statusMessages.connecting }}</span>
+          <span v-if="speechStatus === 'recording'" class="recording-status">{{ statusMessages.recording }}</span>
+          <span v-if="speechStatus === 'processing'">{{ statusMessages.processing }}</span>
+          <span v-if="speechStatus === 'error'" class="error-status">{{ statusMessages.error }}</span>
+          <span v-if="speechStatus === 'timeout'" class="error-status">{{ statusMessages.timeout }}</span>
+          <span v-if="speechStatus === 'completed'" class="success-status">{{ statusMessages.completed }}</span>
+          <span v-if="speechStatus === 'unavailable'" class="error-status">{{ statusMessages.unavailable }}</span>
         </div>
       </div>
     </div>
@@ -220,7 +352,11 @@ const handleKeyDown = (event) => {
         :sample-rate="16000"
         :mime-type="'audio/wav'"
         :show-status="false"
+        :processing-timeout="10000"
+        :enable-realtime="true"
+        :realtime-interval="1000"
         @recognition-result="handleRecognitionResult"
+        @recognition-realtime="handleRealtimeRecognition"
         @recognition-start="handleRecognitionStart"
         @recognition-stop="handleRecognitionStop"
         @connection-open="handleConnectionOpen"
@@ -343,13 +479,25 @@ const handleKeyDown = (event) => {
 
 .input-container {
   display: flex;
+  flex-direction: column;
   padding: 10px;
   border-top: 1px solid #eee;
   pointer-events: auto;
 }
 
+.input-wrapper {
+  position: relative;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.input-controls {
+  display: flex;
+  gap: 8px;
+}
+
 textarea {
-  flex: 1;
+  width: 100%;
   border: 1px solid #ddd;
   border-radius: 4px;
   padding: 8px;
@@ -360,6 +508,20 @@ textarea {
   pointer-events: auto;
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+.realtime-text {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  color: #777;
+  font-style: italic;
+  font-size: 0.9em;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 button {
@@ -419,6 +581,10 @@ button:disabled {
 
 .error-status {
   color: #e74c3c;
+}
+
+.success-status {
+  color: #27ae60;
 }
 
 @keyframes pulse {
