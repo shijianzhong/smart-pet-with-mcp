@@ -6,6 +6,11 @@
         @close="showChangeModelDialog = false"
         @changeModel="changeModel"
       />
+      <div class="interaction-area">
+        <button class="model-button" @click="toggleInteractionMode">
+          {{ interactionMode ? '互动模式' : '拖拽模式' }}
+        </button>
+      </div>
     </div>
   </template>
   
@@ -28,6 +33,14 @@
   const currentModelPath = ref("models/lafei/lafei.model3.json");
   // 控制换装弹窗显示
   const showChangeModelDialog = ref(false);
+  // 控制互动/拖拽模式
+  const interactionMode = ref(false);
+  
+  // 切换互动/拖拽模式
+  const toggleInteractionMode = () => {
+    interactionMode.value = !interactionMode.value;
+    console.log(`切换到${interactionMode.value ? '互动' : '拖拽'}模式`);
+  };
   
   // 手动缩放模型的函数
   const scaleModel = (factor) => {
@@ -187,6 +200,7 @@
   
   // 添加窗口拖动开始和结束的监听
   let isDragging = false;
+  
   const startDragging = () => {
     isDragging = true;
   };
@@ -259,6 +273,7 @@
     window.addEventListener('resize', handleResize);
     // 添加DPI变化监听
     window.matchMedia('screen and (min-resolution: 1dppx)').addEventListener('change', updateResolution);
+    
     // 添加窗口拖动监听
     window.addEventListener('mousedown', startDragging);
     window.addEventListener('mouseup', stopDragging);
@@ -294,10 +309,20 @@
     // 移除窗口拖动监听
     window.removeEventListener('mousedown', startDragging);
     window.removeEventListener('mouseup', stopDragging);
+    
     // 不需要手动移除IPC监听器，onOpenChangeModelDialog会返回清理函数
     if (animationFrameId) {
       cancelAnimationFrame(animationFrameId);
     }
+    
+    // 清理所有可能设置的定时器
+    document.querySelectorAll('*').forEach(element => {
+      const timers = element.getAttribute('data-timers');
+      if (timers) {
+        timers.split(',').forEach(timer => clearInterval(parseInt(timer)));
+      }
+    });
+    
     app?.destroy(true);
     app = null;
     model = null;
@@ -323,10 +348,6 @@
       // 加载新模型，添加高质量渲染选项
       model = await Live2DModel.from(modelPath, {
         autoInteract: false,
-        // 使用更高质量的渲染设置
-        
-        // 如果Live2D模型支持，可以设置更高分辨率的纹理
-        // 一些Live2D模型可能支持不同分辨率的纹理
         higherResolution: true
       });
       
@@ -356,22 +377,141 @@
       // 使用handleResize函数计算并应用缩放
       handleResize(true);
       
-      // 添加到舞台
+      // 添加模型动画功能
+      
+      // 启用自动眨眼
+      if (model.internalModel.eyeBlink) {
+        model.internalModel.eyeBlink = true;
+      }
+      
+      // 启用自动呼吸效果
+      if (model.internalModel.breathing) {
+        model.internalModel.breathing = true;
+      }
+      
+      // 检查并播放空闲动作
+      try {
+        const availableGroups = Object.keys(model.internalModel.motionManager.definitions || {});
+        console.log('可用动作组:', availableGroups);
+        
+        if (model.internalModel.motionManager.definitions.idle) {
+          // 随机播放一个idle动作组的动作
+          model.internalModel.motionManager.startRandomMotion('idle', 'idle');
+          console.log('启动idle动作组动画');
+        } else if (model.internalModel.motionManager.definitions.Idle) {
+          // Cubism 4模型使用"Idle"（首字母大写）
+          model.internalModel.motionManager.startRandomMotion('Idle', 'idle');
+          console.log('启动Idle动作组动画');
+        } else if (availableGroups.includes("")) {
+          // 使用空名称动作组
+          model.internalModel.motionManager.startRandomMotion("", 'idle');
+          console.log('启动空名称动作组动画');
+        } else if (availableGroups.length > 0) {
+          // 使用任何可用的第一个动作组
+          const firstGroup = availableGroups[0];
+          model.internalModel.motionManager.startRandomMotion(firstGroup, 'idle');
+          console.log(`启动动作组动画: ${firstGroup}`);
+        } else {
+          console.log('模型没有找到任何动作组');
+        }
+      } catch (motionError) {
+        console.error('启动动作失败:', motionError);
+      }
+      
+      // 添加模型互动功能
+      model.on('hit', (hitAreas) => {
+        console.log('点击了模型的区域:', hitAreas);
+        
+        // 根据点击区域播放不同动作
+        try {
+          // 只有在互动模式下或非拖拽状态才触发动作
+          if (interactionMode.value || !isDragging) {
+            if (hitAreas.includes('body')) {
+              model.motion('tap_body');
+            } else if (hitAreas.includes('head')) {
+              model.motion('tap_head');
+            } else {
+              // 如果没有特定区域，尝试播放随机动作
+              const groups = Object.keys(model.internalModel.motionManager.definitions || {});
+              if (groups.length > 0) {
+                const randomGroup = groups[Math.floor(Math.random() * groups.length)];
+                model.internalModel.motionManager.startRandomMotion(randomGroup, 'idle');
+              }
+            }
+            
+            // 如果有表情定义，也可以随机播放表情
+            const expressions = Object.keys(model.internalModel.expressionManager?.definitions || {});
+            if (expressions.length > 0) {
+              const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
+              model.expression(randomExpression);
+            }
+          }
+        } catch (hitError) {
+          console.error('处理点击事件失败:', hitError);
+        }
+      });
+      
+      // 添加自动随机动作
+      setInterval(() => {
+        if (model && model.internalModel) {
+          try {
+            // 每15-25秒随机播放一个动作，不管是什么模式都播放
+            const groups = Object.keys(model.internalModel.motionManager.definitions || {});
+            if (groups.length > 0) {
+              const randomGroup = groups[Math.floor(Math.random() * groups.length)];
+              model.internalModel.motionManager.startRandomMotion(randomGroup, 'idle');
+              console.log('播放随机动作:', randomGroup);
+            }
+          } catch (error) {
+            console.error('播放随机动作失败:', error);
+          }
+        }
+      }, 15000 + Math.random() * 10000);
+      
+      // 添加鼠标跟随功能
+      document.addEventListener('mousemove', (e) => {
+        // 只有在互动模式下或非拖拽状态才跟随鼠标
+        if ((interactionMode.value || !isDragging) && model && model.internalModel) {
+          try {
+            const rect = app.view.getBoundingClientRect();
+            const mouseX = (e.clientX - rect.left) / rect.width;
+            const mouseY = (e.clientY - rect.top) / rect.height;
+            
+            // 将鼠标位置转换为模型的视线方向参数
+            // Cubism 4 模型参数名
+            model.internalModel.coreModel.setParameterValueById('ParamAngleX', (mouseX - 0.5) * 30);
+            model.internalModel.coreModel.setParameterValueById('ParamAngleY', (mouseY - 0.5) * 30);
+            model.internalModel.coreModel.setParameterValueById('ParamEyeBallX', (mouseX - 0.5) * 2);
+            model.internalModel.coreModel.setParameterValueById('ParamEyeBallY', (mouseY - 0.5) * 2);
+          } catch (e) {
+            // 忽略参数设置错误，可能是模型不支持这些参数
+          }
+        }
+      });
+      
+      // 定期更新嘴巴动画
+      setInterval(() => {
+        if (model && model.internalModel) {
+          try {
+            let n = Math.random() * 0.8; // 控制最大开口度
+            model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", n);
+          } catch (error) {
+            // 忽略参数设置错误
+          }
+        }
+      }, 200); // 更新频率降低，避免过于频繁的日志
+      
+      // 把模型添加到舞台上
       app.stage.addChild(model);
       
-      // 提示用户可以调整模型大小的方法
-      console.log('提示：可以使用Ctrl+加号放大模型，Ctrl+减号缩小模型，Ctrl+0重置模型大小，或者按住Ctrl键滚动鼠标滚轮缩放模型');
+      console.log("模型已添加到舞台!");
     } catch (error) {
       console.error("模型加载失败:", error);
     }
   };
   
   const mouthFn = () => {
-    setInterval(() => {
-      let n = Math.random();
-      console.log("随机数0~1控制嘴巴Y轴高度-->", n);
-      model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", n);
-    }, 100);
+    // 不再使用这个函数，已在更智能的方式中实现
   };
   
   const init = async () => {
@@ -413,11 +553,8 @@
         
         // 从正确的路径加载模型
         model = await Live2DModel.from(modelPath, {
-          autoInteract: false, // 关闭眼睛自动跟随功能
+          autoInteract: false, // 关闭自动互动功能，我们将手动实现
           // 使用更高质量的渲染设置
-          
-          // 如果Live2D模型支持，可以设置更高分辨率的纹理
-          // 一些Live2D模型可能支持不同分辨率的纹理
           higherResolution: true
         });
         
@@ -436,6 +573,130 @@
         // 将模型放置在画布中央
         model.x = window.innerWidth / 2;
         model.y = window.innerHeight / 2 - 20; // 稍微上移20像素，让模型更居中
+        
+        // 添加模型动画功能
+        
+        // 启用自动眨眼
+        if (model.internalModel.eyeBlink) {
+          model.internalModel.eyeBlink = true;
+        }
+        
+        // 启用自动呼吸效果
+        if (model.internalModel.breathing) {
+          model.internalModel.breathing = true;
+        }
+        
+        // 检查并播放空闲动作
+        try {
+          const availableGroups = Object.keys(model.internalModel.motionManager.definitions || {});
+          console.log('可用动作组:', availableGroups);
+          
+          if (model.internalModel.motionManager.definitions.idle) {
+            // 随机播放一个idle动作组的动作
+            model.internalModel.motionManager.startRandomMotion('idle', 'idle');
+            console.log('启动idle动作组动画');
+          } else if (model.internalModel.motionManager.definitions.Idle) {
+            // Cubism 4模型使用"Idle"（首字母大写）
+            model.internalModel.motionManager.startRandomMotion('Idle', 'idle');
+            console.log('启动Idle动作组动画');
+          } else if (availableGroups.includes("")) {
+            // 使用空名称动作组
+            model.internalModel.motionManager.startRandomMotion("", 'idle');
+            console.log('启动空名称动作组动画');
+          } else if (availableGroups.length > 0) {
+            // 使用任何可用的第一个动作组
+            const firstGroup = availableGroups[0];
+            model.internalModel.motionManager.startRandomMotion(firstGroup, 'idle');
+            console.log(`启动动作组动画: ${firstGroup}`);
+          } else {
+            console.log('模型没有找到任何动作组');
+          }
+        } catch (motionError) {
+          console.error('启动动作失败:', motionError);
+        }
+        
+        // 添加模型互动功能
+        model.on('hit', (hitAreas) => {
+          console.log('点击了模型的区域:', hitAreas);
+          
+          // 根据点击区域播放不同动作
+          try {
+            // 只有在互动模式下或非拖拽状态才触发动作
+            if (interactionMode.value || !isDragging) {
+              if (hitAreas.includes('body')) {
+                model.motion('tap_body');
+              } else if (hitAreas.includes('head')) {
+                model.motion('tap_head');
+              } else {
+                // 如果没有特定区域，尝试播放随机动作
+                const groups = Object.keys(model.internalModel.motionManager.definitions || {});
+                if (groups.length > 0) {
+                  const randomGroup = groups[Math.floor(Math.random() * groups.length)];
+                  model.internalModel.motionManager.startRandomMotion(randomGroup, 'idle');
+                }
+              }
+              
+              // 如果有表情定义，也可以随机播放表情
+              const expressions = Object.keys(model.internalModel.expressionManager?.definitions || {});
+              if (expressions.length > 0) {
+                const randomExpression = expressions[Math.floor(Math.random() * expressions.length)];
+                model.expression(randomExpression);
+              }
+            }
+          } catch (hitError) {
+            console.error('处理点击事件失败:', hitError);
+          }
+        });
+        
+        // 添加自动随机动作
+        setInterval(() => {
+          if (model && model.internalModel) {
+            try {
+              // 每15-25秒随机播放一个动作，不管是什么模式都播放
+              const groups = Object.keys(model.internalModel.motionManager.definitions || {});
+              if (groups.length > 0) {
+                const randomGroup = groups[Math.floor(Math.random() * groups.length)];
+                model.internalModel.motionManager.startRandomMotion(randomGroup, 'idle');
+                console.log('播放随机动作:', randomGroup);
+              }
+            } catch (error) {
+              console.error('播放随机动作失败:', error);
+            }
+          }
+        }, 15000 + Math.random() * 10000);
+        
+        // 添加鼠标跟随功能
+        document.addEventListener('mousemove', (e) => {
+          // 只有在互动模式下或非拖拽状态才跟随鼠标
+          if ((interactionMode.value || !isDragging) && model && model.internalModel) {
+            try {
+              const rect = app.view.getBoundingClientRect();
+              const mouseX = (e.clientX - rect.left) / rect.width;
+              const mouseY = (e.clientY - rect.top) / rect.height;
+              
+              // 将鼠标位置转换为模型的视线方向参数
+              // Cubism 4 模型参数名
+              model.internalModel.coreModel.setParameterValueById('ParamAngleX', (mouseX - 0.5) * 30);
+              model.internalModel.coreModel.setParameterValueById('ParamAngleY', (mouseY - 0.5) * 30);
+              model.internalModel.coreModel.setParameterValueById('ParamEyeBallX', (mouseX - 0.5) * 2);
+              model.internalModel.coreModel.setParameterValueById('ParamEyeBallY', (mouseY - 0.5) * 2);
+            } catch (e) {
+              // 忽略参数设置错误，可能是模型不支持这些参数
+            }
+          }
+        });
+        
+        // 定期更新嘴巴动画
+        setInterval(() => {
+          if (model && model.internalModel) {
+            try {
+              let n = Math.random() * 0.8; // 控制最大开口度
+              model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", n);
+            } catch (error) {
+              // 忽略参数设置错误
+            }
+          }
+        }, 200); // 更新频率降低，避免过于频繁的日志
         
         // 把模型添加到舞台上
         app.stage.addChild(model);
@@ -470,7 +731,7 @@
     justify-content: center;
     align-items: center;
     z-index: 1;
-    -webkit-app-region: drag; /* 允许拖动区域 */
+    -webkit-app-region: drag; /* 恢复为drag允许窗口拖动 */
     app-region: drag;
     cursor: move;
     -webkit-user-select: none;
@@ -486,7 +747,7 @@
     display: block;
     -webkit-user-select: none;
     user-select: none;
-    -webkit-app-region: drag;
+    -webkit-app-region: drag; /* 恢复为drag允许窗口拖动 */
     app-region: drag;
     cursor: move;
     background-color: transparent;
@@ -501,10 +762,15 @@
     will-change: transform; /* 提示浏览器此元素将频繁变化 */
   }
   
-  .model-button {
-    position: absolute;
+  .interaction-area {
+    position: fixed;
     bottom: 20px;
     right: 20px;
+    z-index: 100;
+    pointer-events: auto; /* 确保可以接收鼠标事件 */
+  }
+  
+  .model-button {
     padding: 8px 16px;
     background-color: rgba(66, 184, 131, 0.8);
     color: white;
@@ -513,7 +779,6 @@
     cursor: pointer;
     -webkit-app-region: no-drag; /* 按钮不作为拖动区域 */
     app-region: no-drag;
-    z-index: 10;
     transition: all 0.3s ease;
     
     &:hover {

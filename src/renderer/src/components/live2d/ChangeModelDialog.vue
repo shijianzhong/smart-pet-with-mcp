@@ -63,9 +63,9 @@ const modelList = ref([
   },
   // 下面添加更多测试数据以验证滚动效果
   {
-    name: '模型5',
-    path: 'models/lafei/lafei.model3.json',
-    thumbnail: 'models/lafei/thumbnail.png'
+    name: 'bisimai_2',
+    path: 'models/bisimai_2/bisimai_2.model3.json',
+    thumbnail: 'models/bisimai_2/thumbnail.png'
   },
   {
     name: '模型6',
