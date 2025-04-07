@@ -122,10 +122,18 @@ const handleRecognitionStop = (data) => {
       }, 3000);
     } else if (data.reason === 'completed') {
       speechStatus.value = 'completed';
+      // 确保completed状态也会恢复到idle
+      setTimeout(() => {
+        if (speechStatus.value === 'completed') {
+          speechStatus.value = 'idle';
+        }
+      }, 2000);
     } else {
+      // 其他任何原因都将状态设置为idle
       speechStatus.value = 'idle';
     }
   } else {
+    // 如果没有原因，也将状态设置为idle
     speechStatus.value = 'idle';
   }
 }
@@ -181,6 +189,15 @@ const toggleSpeechRecognition = async () => {
     console.log('停止录音');
     speechRecognizer.value.stopRecognition();
     speechStatus.value = 'processing';
+    
+    // 确保状态最终会恢复到idle，即使没有收到停止事件
+    setTimeout(() => {
+      if (speechStatus.value === 'processing') {
+        console.log('语音处理超时，强制恢复idle状态');
+        isRecording.value = false;
+        speechStatus.value = 'idle';
+      }
+    }, 5000);
   } else {
     // 开始录音
     console.log('开始录音');
@@ -311,7 +328,7 @@ const handleKeyDown = (event) => {
             class="speech-button" 
             :class="{ 'recording': isRecording }"
             @click="toggleSpeechRecognition"
-            :disabled="isLoading || speechStatus === 'connecting' || speechStatus === 'processing'"
+            :disabled="isLoading || speechStatus === 'connecting'"
           >
             <span v-if="isRecording">停止录音</span>
             <span v-else>语音输入</span>
