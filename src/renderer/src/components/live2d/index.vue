@@ -31,216 +31,273 @@
   let lastScaleFactor = null; // 用于记忆上一次的缩放比例
   let initialScaleFactor = null; // 用于记住初始缩放比例（用于重置）
   
+  // 创建一个播放login动画的函数
+  const playLoginAnimation = (modelInstance, context = '初始化') => {
+    if (!modelInstance || !modelInstance.internalModel) return;
+    
+    try {
+      console.log(`${context}时，尝试播放login动画...`);
+      // 检查模型是否有login动画
+      if (modelInstance.internalModel.motionManager.definitions) {
+        const motionGroups = Object.keys(modelInstance.internalModel.motionManager.definitions);
+        console.log('可用动作组:', motionGroups);
+        
+        // 查找默认动作组中的login动画
+        if (motionGroups.includes("")) {
+          const defaultGroup = modelInstance.internalModel.motionManager.definitions[""];
+          if (defaultGroup) {
+            // 查找login动画
+            const loginMotion = defaultGroup.find(motion => 
+              motion.File && motion.File.toLowerCase().includes('login')
+            );
+            
+            if (loginMotion) {
+              console.log('找到login动画:', loginMotion);
+              // 播放login动画
+              modelInstance.motion("", loginMotion.File.split('/').pop().replace('.motion3.json', ''));
+              console.log('播放login动画成功');
+              return true;
+            } else {
+              console.log('在默认组中未找到login动画');
+              // 如果在context为"切换模型"时找不到login动画，尝试播放其他动画
+              if (context === '切换模型' && defaultGroup.length > 0) {
+                console.log('使用首个可用动画代替login动画');
+                const firstMotion = defaultGroup[0];
+                modelInstance.motion("", firstMotion.File.split('/').pop().replace('.motion3.json', ''));
+                return true;
+              }
+            }
+          }
+        } else {
+          console.log('模型没有默认动作组');
+          // 如果在context为"切换模型"时没有默认动作组，尝试使用其他动作组
+          if (context === '切换模型' && motionGroups.length > 0) {
+            console.log('使用其他动作组代替默认动作组');
+            const firstGroup = motionGroups[0];
+            modelInstance.internalModel.motionManager.startRandomMotion(firstGroup, 'idle');
+            console.log('使用动作组动画代替:', firstGroup);
+            return true;
+          }
+        }
+      } else {
+        console.log('模型没有任何动作定义');
+      }
+    } catch (error) {
+      console.error('播放login动画失败:', error);
+    }
+    return false;
+  };
+  
   // 当前模型路径 - 修改为正确的路径
-const currentModelPath = ref("models/lafei/lafei.model3.json");
-// 控制换装弹窗显示
-const showChangeModelDialog = ref(false);
-// 控制互动/拖拽模式
-const interactionMode = ref(false);
+  const currentModelPath = ref("models/lafei/lafei.model3.json");
+  // 控制换装弹窗显示
+  const showChangeModelDialog = ref(false);
+  // 控制互动/拖拽模式
+  const interactionMode = ref(false);
 
-// 模型列表
-const localModelList = ref([
-  {
-    name: '拉菲',
-    path: 'models/lafei/lafei.model3.json',
-    thumbnail: 'models/lafei/thumbnail.png'
-  },
-  {
-    name: '爱尔德里奇5',
-    path: 'models/aierdeliqi_5/aierdeliqi_5.model3.json',
-    thumbnail: 'models/aierdeliqi_5/thumbnail.png'
-  },
-  {
-    name: '爱尔德里奇4',
-    path: 'models/aierdeliqi_4/aierdeliqi_4.model3.json',
-    thumbnail: 'models/aierdeliqi_4/thumbnail.png'
-  },
-  {
-    name: '爱丹2',
-    path: 'models/aidang_2/aidang_2.model3.json',
-    thumbnail: 'models/aidang_2/thumbnail.png'
-  },
-  {
-    name: 'bisimai_2',
-    path: 'models/bisimai_2/bisimai_2.model3.json',
-    thumbnail: 'models/bisimai_2/thumbnail.png'
-  },
-  {
-    name: '扎拉2',
-    path: 'models/zhala_2/zhala_2.model3.json',
-    thumbnail: 'models/zhala_2/thumbnail.png'
-  },
-  {
-    name: 'Z46',
-    path: 'models/z46_2/z46_2.model3.json',
-    thumbnail: 'models/z46_2/thumbnail.png'
-  },
-  {
-    name: 'Z23',
-    path: 'models/z23/z23.model3.json',
-    thumbnail: 'models/z23/thumbnail.png'
-  },
-  {
-    name: '伊吹2',
-    path: 'models/yichui_2/yichui_2.model3.json',
-    thumbnail: 'models/yichui_2/thumbnail.png'
-  },
-  {
-    name: '雪风',
-    path: 'models/xuefeng/xuefeng.model3.json',
-    thumbnail: 'models/xuefeng/thumbnail.png'
-  },
-  {
-    name: '吸血鬼4',
-    path: 'models/xixuegui_4/xixuegui_4.model3.json',
-    thumbnail: 'models/xixuegui_4/thumbnail.png'
-  },
-  {
-    name: '翔鹤2',
-    path: 'models/xianghe_2/xianghe_2.model3.json',
-    thumbnail: 'models/xianghe_2/thumbnail.png'
-  },
-  {
-    name: '提尔比茨2',
-    path: 'models/tierbici_2/tierbici_2.model3.json',
-    thumbnail: 'models/tierbici_2/thumbnail.png'
-  },
-  {
-    name: '天狼星3',
-    path: 'models/tianlangxing_3/tianlangxing_3.model3.json',
-    thumbnail: 'models/tianlangxing_3/thumbnail.png'
-  },
-  {
-    name: '太原2',
-    path: 'models/taiyuan_2/taiyuan_2.model3.json',
-    thumbnail: 'models/taiyuan_2/thumbnail.png'
-  },
-  {
-    name: '斯佩伯爵5',
-    path: 'models/sipeibojue_5/sipeibojue_5.model3.json',
-    thumbnail: 'models/sipeibojue_5/thumbnail.png'
-  },
-  {
-    name: '圣路易斯3',
-    path: 'models/shengluyisi_3/shengluyisi_3.model3.json',
-    thumbnail: 'models/shengluyisi_3/thumbnail.png'
-  },
-  {
-    name: '圣路易斯2',
-    path: 'models/shengluyisi_2/shengluyisi_2.model3.json',
-    thumbnail: 'models/shengluyisi_2/thumbnail.png'
-  },
-  {
-    name: '齐柏林2',
-    path: 'models/qibolin_2/qibolin_2.model3.json',
-    thumbnail: 'models/qibolin_2/thumbnail.png'
-  },
-  {
-    name: '平海4',
-    path: 'models/pinghai_4/pinghai_4.model3.json',
-    thumbnail: 'models/pinghai_4/thumbnail.png'
-  },
-  {
-    name: '宁海4',
-    path: 'models/ninghai_4/ninghai_4.model3.json',
-    thumbnail: 'models/ninghai_4/thumbnail.png'
-  },
-  {
-    name: '明石',
-    path: 'models/mingshi/mingshi.model3.json',
-    thumbnail: 'models/mingshi/thumbnail.png'
-  },
-  {
-    name: '凌波',
-    path: 'models/lingbo/lingbo.model3.json',
-    thumbnail: 'models/lingbo/thumbnail.png'
-  },
-  {
-    name: '拉菲4',
-    path: 'models/lafei_4/lafei_4.model3.json',
-    thumbnail: 'models/lafei_4/thumbnail.png'
-  },
-  {
-    name: '克利夫兰3',
-    path: 'models/kelifulan_3/kelifulan_3.model3.json',
-    thumbnail: 'models/kelifulan_3/thumbnail.png'
-  },
-  {
-    name: '火奴鲁鲁5',
-    path: 'models/huonululu_5/huonululu_5.model3.json',
-    thumbnail: 'models/huonululu_5/thumbnail.png'
-  },
-  {
-    name: '火奴鲁鲁3',
-    path: 'models/huonululu_3/huonululu_3.model3.json',
-    thumbnail: 'models/huonululu_3/thumbnail.png'
-  },
-  {
-    name: '黄金方舟3',
-    path: 'models/huangjiafangzhou_3/huangjiafangzhou_3.model3.json',
-    thumbnail: 'models/huangjiafangzhou_3/thumbnail.png'
-  },
-  {
-    name: '黑太子2',
-    path: 'models/heitaizi_2/heitaizi_2.model3.json',
-    thumbnail: 'models/heitaizi_2/thumbnail.png'
-  },
-  {
-    name: '根艾森瑙2',
-    path: 'models/genaisennao_2/genaisennao_2.model3.json',
-    thumbnail: 'models/genaisennao_2/thumbnail.png'
-  },
-  {
-    name: '敦刻尔克2',
-    path: 'models/dunkeerke_2/dunkeerke_2.model3.json',
-    thumbnail: 'models/dunkeerke_2/thumbnail.png'
-  },
-  {
-    name: '独角兽4',
-    path: 'models/dujiaoshou_4/dujiaoshou_4.model3.json',
-    thumbnail: 'models/dujiaoshou_4/thumbnail.png'
-  },
-  {
-    name: '德意志3',
-    path: 'models/deyizhi_3/deyizhi_3.model3.json',
-    thumbnail: 'models/deyizhi_3/thumbnail.png'
-  },
-  {
-    name: '大凤2',
-    path: 'models/dafeng_2/dafeng_2.model3.json',
-    thumbnail: 'models/dafeng_2/thumbnail.png'
-  },
-  {
-    name: '吹雪3',
-    path: 'models/chuixue_3/chuixue_3.model3.json',
-    thumbnail: 'models/chuixue_3/thumbnail.png'
-  },
-  {
-    name: '标枪3',
-    path: 'models/biaoqiang_3/biaoqiang_3.model3.json',
-    thumbnail: 'models/biaoqiang_3/thumbnail.png'
-  },
-  {
-    name: '标枪',
-    path: 'models/biaoqiang/biaoqiang.model3.json',
-    thumbnail: 'models/biaoqiang/thumbnail.png'
-  },
-  {
-    name: '贝尔法斯特2',
-    path: 'models/beierfasite_2/beierfasite_2.model3.json',
-    thumbnail: 'models/beierfasite_2/thumbnail.png'
-  },
-  {
-    name: '半人马2',
-    path: 'models/banrenma_2/banrenma_2.model3.json',
-    thumbnail: 'models/banrenma_2/thumbnail.png'
-  },
-  {
-    name: '埃米尔贝尔丁2',
-    path: 'models/aimierbeierding_2/aimierbeierding_2.model3.json',
-    thumbnail: 'models/aimierbeierding_2/thumbnail.png'
-  }
-]);
+  // 模型列表
+  const localModelList = ref([
+    {
+      name: '拉菲',
+      path: 'models/lafei/lafei.model3.json',
+      thumbnail: 'models/lafei/thumbnail.png'
+    },
+    {
+      name: '爱尔德里奇5',
+      path: 'models/aierdeliqi_5/aierdeliqi_5.model3.json',
+      thumbnail: 'models/aierdeliqi_5/thumbnail.png'
+    },
+    {
+      name: '爱尔德里奇4',
+      path: 'models/aierdeliqi_4/aierdeliqi_4.model3.json',
+      thumbnail: 'models/aierdeliqi_4/thumbnail.png'
+    },
+    {
+      name: '爱丹2',
+      path: 'models/aidang_2/aidang_2.model3.json',
+      thumbnail: 'models/aidang_2/thumbnail.png'
+    },
+    {
+      name: 'bisimai_2',
+      path: 'models/bisimai_2/bisimai_2.model3.json',
+      thumbnail: 'models/bisimai_2/thumbnail.png'
+    },
+    {
+      name: '扎拉2',
+      path: 'models/zhala_2/zhala_2.model3.json',
+      thumbnail: 'models/zhala_2/thumbnail.png'
+    },
+    {
+      name: 'Z46',
+      path: 'models/z46_2/z46_2.model3.json',
+      thumbnail: 'models/z46_2/thumbnail.png'
+    },
+    {
+      name: 'Z23',
+      path: 'models/z23/z23.model3.json',
+      thumbnail: 'models/z23/thumbnail.png'
+    },
+    {
+      name: '伊吹2',
+      path: 'models/yichui_2/yichui_2.model3.json',
+      thumbnail: 'models/yichui_2/thumbnail.png'
+    },
+    {
+      name: '雪风',
+      path: 'models/xuefeng/xuefeng.model3.json',
+      thumbnail: 'models/xuefeng/thumbnail.png'
+    },
+    {
+      name: '吸血鬼4',
+      path: 'models/xixuegui_4/xixuegui_4.model3.json',
+      thumbnail: 'models/xixuegui_4/thumbnail.png'
+    },
+    {
+      name: '翔鹤2',
+      path: 'models/xianghe_2/xianghe_2.model3.json',
+      thumbnail: 'models/xianghe_2/thumbnail.png'
+    },
+    {
+      name: '提尔比茨2',
+      path: 'models/tierbici_2/tierbici_2.model3.json',
+      thumbnail: 'models/tierbici_2/thumbnail.png'
+    },
+    {
+      name: '天狼星3',
+      path: 'models/tianlangxing_3/tianlangxing_3.model3.json',
+      thumbnail: 'models/tianlangxing_3/thumbnail.png'
+    },
+    {
+      name: '太原2',
+      path: 'models/taiyuan_2/taiyuan_2.model3.json',
+      thumbnail: 'models/taiyuan_2/thumbnail.png'
+    },
+    {
+      name: '斯佩伯爵5',
+      path: 'models/sipeibojue_5/sipeibojue_5.model3.json',
+      thumbnail: 'models/sipeibojue_5/thumbnail.png'
+    },
+    {
+      name: '圣路易斯3',
+      path: 'models/shengluyisi_3/shengluyisi_3.model3.json',
+      thumbnail: 'models/shengluyisi_3/thumbnail.png'
+    },
+    {
+      name: '圣路易斯2',
+      path: 'models/shengluyisi_2/shengluyisi_2.model3.json',
+      thumbnail: 'models/shengluyisi_2/thumbnail.png'
+    },
+    {
+      name: '齐柏林2',
+      path: 'models/qibolin_2/qibolin_2.model3.json',
+      thumbnail: 'models/qibolin_2/thumbnail.png'
+    },
+    {
+      name: '平海4',
+      path: 'models/pinghai_4/pinghai_4.model3.json',
+      thumbnail: 'models/pinghai_4/thumbnail.png'
+    },
+    {
+      name: '宁海4',
+      path: 'models/ninghai_4/ninghai_4.model3.json',
+      thumbnail: 'models/ninghai_4/thumbnail.png'
+    },
+    {
+      name: '明石',
+      path: 'models/mingshi/mingshi.model3.json',
+      thumbnail: 'models/mingshi/thumbnail.png'
+    },
+    {
+      name: '凌波',
+      path: 'models/lingbo/lingbo.model3.json',
+      thumbnail: 'models/lingbo/thumbnail.png'
+    },
+    {
+      name: '拉菲4',
+      path: 'models/lafei_4/lafei_4.model3.json',
+      thumbnail: 'models/lafei_4/thumbnail.png'
+    },
+    {
+      name: '克利夫兰3',
+      path: 'models/kelifulan_3/kelifulan_3.model3.json',
+      thumbnail: 'models/kelifulan_3/thumbnail.png'
+    },
+    {
+      name: '火奴鲁鲁5',
+      path: 'models/huonululu_5/huonululu_5.model3.json',
+      thumbnail: 'models/huonululu_5/thumbnail.png'
+    },
+    {
+      name: '火奴鲁鲁3',
+      path: 'models/huonululu_3/huonululu_3.model3.json',
+      thumbnail: 'models/huonululu_3/thumbnail.png'
+    },
+    {
+      name: '黄金方舟3',
+      path: 'models/huangjiafangzhou_3/huangjiafangzhou_3.model3.json',
+      thumbnail: 'models/huangjiafangzhou_3/thumbnail.png'
+    },
+    {
+      name: '黑太子2',
+      path: 'models/heitaizi_2/heitaizi_2.model3.json',
+      thumbnail: 'models/heitaizi_2/thumbnail.png'
+    },
+    {
+      name: '根艾森瑙2',
+      path: 'models/genaisennao_2/genaisennao_2.model3.json',
+      thumbnail: 'models/genaisennao_2/thumbnail.png'
+    },
+    {
+      name: '敦刻尔克2',
+      path: 'models/dunkeerke_2/dunkeerke_2.model3.json',
+      thumbnail: 'models/dunkeerke_2/thumbnail.png'
+    },
+    {
+      name: '独角兽4',
+      path: 'models/dujiaoshou_4/dujiaoshou_4.model3.json',
+      thumbnail: 'models/dujiaoshou_4/thumbnail.png'
+    },
+    {
+      name: '德意志3',
+      path: 'models/deyizhi_3/deyizhi_3.model3.json',
+      thumbnail: 'models/deyizhi_3/thumbnail.png'
+    },
+    {
+      name: '大凤2',
+      path: 'models/dafeng_2/dafeng_2.model3.json',
+      thumbnail: 'models/dafeng_2/thumbnail.png'
+    },
+    {
+      name: '吹雪3',
+      path: 'models/chuixue_3/chuixue_3.model3.json',
+      thumbnail: 'models/chuixue_3/thumbnail.png'
+    },
+    {
+      name: '标枪3',
+      path: 'models/biaoqiang_3/biaoqiang_3.model3.json',
+      thumbnail: 'models/biaoqiang_3/thumbnail.png'
+    },
+    {
+      name: '标枪',
+      path: 'models/biaoqiang/biaoqiang.model3.json',
+      thumbnail: 'models/biaoqiang/thumbnail.png'
+    },
+    {
+      name: '贝尔法斯特2',
+      path: 'models/beierfasite_2/beierfasite_2.model3.json',
+      thumbnail: 'models/beierfasite_2/thumbnail.png'
+    },
+    {
+      name: '半人马2',
+      path: 'models/banrenma_2/banrenma_2.model3.json',
+      thumbnail: 'models/banrenma_2/thumbnail.png'
+    },
+    {
+      name: '埃米尔贝尔丁2',
+      path: 'models/aimierbeierding_2/aimierbeierding_2.model3.json',
+      thumbnail: 'models/aimierbeierding_2/thumbnail.png'
+    }
+  ]);
   
   // 切换互动/拖拽模式
   const toggleInteractionMode = () => {
@@ -595,6 +652,14 @@ const localModelList = ref([
         model.internalModel.breathing = true;
       }
       
+      // 把模型添加到舞台上
+      app.stage.addChild(model);
+      
+      // 播放login动画（模型切换时）
+      playLoginAnimation(model, '切换模型');
+      
+      console.log("模型切换完成!");
+      
       // 检查并播放空闲动作
       try {
         const availableGroups = Object.keys(model.internalModel.motionManager.definitions || {});
@@ -672,7 +737,7 @@ const localModelList = ref([
             console.error('播放随机动作失败:', error);
           }
         }
-      }, 15000 + Math.random() * 10000);
+      }, 2000 + Math.random() * 1000);
       
       // 添加鼠标跟随功能
       document.addEventListener('mousemove', (e) => {
@@ -706,9 +771,6 @@ const localModelList = ref([
           }
         }
       }, 200); // 更新频率降低，避免过于频繁的日志
-      
-      // 把模型添加到舞台上
-      app.stage.addChild(model);
       
       console.log("模型已添加到舞台!");
     } catch (error) {
@@ -791,6 +853,14 @@ const localModelList = ref([
         if (model.internalModel.breathing) {
           model.internalModel.breathing = true;
         }
+        
+        // 把模型添加到舞台上
+        app.stage.addChild(model);
+        
+        // 播放login动画（应用初始化时）
+        playLoginAnimation(model, '初始化');
+        
+        console.log("模型已添加到舞台!");
         
         // 检查并播放空闲动作
         try {
@@ -903,9 +973,6 @@ const localModelList = ref([
             }
           }
         }, 200); // 更新频率降低，避免过于频繁的日志
-        
-        // 把模型添加到舞台上
-        app.stage.addChild(model);
         
         console.log("模型已添加到舞台!");
       } catch (modelError) {

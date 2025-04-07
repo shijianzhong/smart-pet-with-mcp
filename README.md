@@ -1,12 +1,27 @@
 # smart-pet-with-mcp
 
-An Electron application with Vue
+一个基于MCP协议的智能宠物伴侣应用，通过语音识别和自然语言处理技术，为宠物主人提供实时互动和服务。
+该应用是一个MCP-Client应用，可以自主无限搭配MCP-Server实现需求。
 
-## Recommended IDE Setup
+<video width="640" height="480" controls src="./resources/show.mp4"></video>
+<img src="./resources/demo1.jpg" width="400" height="400">
+<img src="./resources/mcpsetting.jpg" width="400" height="400">
 
-- [VSCode](https://code.visualstudio.com/) + [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) + [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar)
+## 功能
 
-## Project Setup
+- 语音识别：通过麦克风捕获用户语音，并转换为文本。
+- 自然语言处理：将语音识别的文本转换为MCP协议格式的指令，发送给MCP服务器。
+- GUI界面：提供图形用户界面，方便用户操作和查看信息。
+- ...
+
+
+## 系统架构
+
+- MCP-Client：客户端应用，负责语音识别、自然语言处理和GUI界面。
+- MCP-Server：服务器应用，负责接收MCP协议格式的指令，并执行相应的操作。
+- FunASR：语音识别引擎，用于语音识别。
+- ...
+## 开发
 
 ### Install
 
@@ -32,18 +47,6 @@ $ pnpm build:mac
 # For Linux
 $ pnpm build:linux
 ```
-
-## 新功能: GUI聊天界面
-
-我们为应用添加了一个GUI聊天界面，允许用户直接在应用中与MCP客户端进行对话，而不是使用命令行。
-
-主要更改：
-
-1. 在Home.vue中添加了聊天输入框和聊天历史显示区域
-2. 修改了main/index.js，通过IPC处理消息查询，而不是使用命令行chatLoop
-3. 保留e-mcp-client.js中的chatLoop函数以保持兼容性，但在GUI模式下不再调用它
-
-这些更改使应用更加用户友好，让用户可以直接在图形界面中与AI助手交互。
 
 
 ## 语音识别采用 FunASR
@@ -71,3 +74,30 @@ nohup bash run_server_2pass.sh \
   --certfile 0 \
   --hotword ../../hotwords.txt > log.txt 2>&1 &
 ```
+
+
+
+## 欢迎大佬提出宝贵的建议和意见，提Issues，会不断进行优化和实现。
+## 联系与交流
+
+### 联系作者
+- **邮箱**：994129509@qq.com
+- **QQ群**：994129509
+
+### 打赏作者
+<br/>
+<div align="center">
+<p>打赏一块钱支持一下作者</p>
+<div align="center">
+    <img src="./resources/dashang.jpg" width="400" height="400">
+</div>
+</div>
+
+## 💰 衷心感谢 **大喵哥** 的慷慨打赏！  ¥ 50 元，您每一分钱都不会被辜负。💰    
+## 💰 衷心感谢 **蔡从洋Tom** 的慷慨打赏！  ¥ 1 元，您每一分钱都不会被辜负。💰    
+## 💰 衷心感谢 **简文斌** 的慷慨打赏！  ¥ 5 元，您每一分钱都不会被辜负。💰    
+## 💰 衷心感谢 **加油，支持** 的慷慨打赏！  ¥ 5 元，您每一分钱都不会被辜负。💰    
+## 💰 衷心感谢 **Tanix** 的慷慨打赏！  ¥ 5 元，您每一分钱都不会被辜负。💰    
+## 💰 衷心感谢 **朱松岭** 的慷慨打赏！  ¥ 5 元，您每一分钱都不会被辜负。💰     
+## 💰 衷心感谢 **Victor** 的慷慨打赏！  ¥ 5 元，您每一分钱都不会被辜负。💰    
+## 💰 衷心感谢 **kelly** 的慷慨打赏！  ¥ 1 元，您每一分钱都不会被辜负。💰  
