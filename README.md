@@ -1,84 +1,109 @@
-# smart-pet-with-mcp
+# Smart Pet with MCP
 
-一个基于MCP协议的智能宠物伴侣应用，通过语音识别和自然语言处理技术，为宠物主人提供实时互动和服务。
-该应用是一个MCP-Client应用，可以自主无限搭配MCP-Server实现需求。
+一个基于 MCP（Model Context Protocol）协议的智能宠物伴侣应用，通过语音识别和自然语言处理技术，为宠物主人提供实时互动和服务。该应用是一个 MCP-Client 应用，可以自主无限搭配 MCP-Server 实现需求。
 
-## 在线预览
+## 项目特点
 
+- 🎯 **智能交互**：通过语音识别和自然语言处理实现智能对话
+- 🎨 **精美界面**：采用 Vue3 + Electron 构建的现代化界面
+- 🔄 **实时响应**：基于 MCP 协议实现快速响应
+- 🐱 **宠物陪伴**：提供虚拟宠物互动体验
+- 🌐 **多平台支持**：支持 Windows、macOS 和 Linux 系统
 
-[观看视频](https://shijianzhong.github.io/7_1744033926.mp4)
+## 技术栈
 
+- **前端框架**：Vue 3 + Electron
+- **语音识别**：FunASR
+- **协议支持**：MCP (Model Context Protocol)
+- **UI 渲染**：Pixi.js
+- **数据库**：Better-SQLite3
+- **AI 模型**：支持 Anthropic、OpenAI 等大模型
 
-[youtube](https://www.youtube.com/watch?v=hSaFswzjQ2Q)
+## 功能特性
 
-[bilibili](https://www.bilibili.com/video/BV1irRUYrE4u/?spm_id_from=333.1387.homepage.video_card.click&vd_source=ac39552ce5c2d2d27cb66c496d000ae9)
+### 核心功能
+- 🎤 **语音识别**：通过麦克风捕获用户语音，并转换为文本
+- 🤖 **自然语言处理**：将语音识别的文本转换为 MCP 协议格式的指令
+- 💬 **智能对话**：支持与虚拟宠物进行自然语言对话
+- 🎮 **交互控制**：支持语音和点击等多种交互方式
 
-[抖音](https://www.douyin.com/user/self?from_tab_name=main&modal_id=7490551766623292712)
-
-
-
-## 截图
-<img src="./resources/demo1.jpg" width="400" height="400">
-<img src="./resources/mcpsetting.jpg" width="400" height="400">
-
-## 功能
-
-- 语音识别：通过麦克风捕获用户语音，并转换为文本。
-- 自然语言处理：将语音识别的文本转换为MCP协议格式的指令，发送给MCP服务器。
-- GUI界面：提供图形用户界面，方便用户操作和查看信息。
-- ...
-
+### 特色功能
+- 🎭 **虚拟形象**：支持 Live2D 虚拟形象展示
+- 🌡️ **环境感知**：支持天气和环境信息展示
+- 🔄 **实时更新**：支持应用自动更新
+- ⚙️ **配置管理**：支持 MCP 服务器配置管理
 
 ## 系统架构
 
-- MCP-Client：客户端应用，负责语音识别、自然语言处理和GUI界面。
-- MCP-Server：服务器应用，负责接收MCP协议格式的指令，并执行相应的操作。
-- FunASR：语音识别引擎，用于语音识别。
-- one-api：对接各种大模型
-- ...
-## 开发
-
-### Install
-
-```bash
-$ pnpm install
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│                 │     │                 │     │                 │
+│  Smart Pet App  │────▶│    MCP Client   │────▶│    MCP Server   │
+│  (Electron)     │     │                 │     │                 │
+│                 │     │                 │     │                 │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+        │                       │                       │
+        │                       │                       │
+        ▼                       ▼                       ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│                 │     │                 │     │                 │
+│  FunASR Engine  │     │  AI Models      │     │  File System    │
+│                 │     │                 │     │                 │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
-### Development
+## 快速开始
 
+### 环境要求
+- Node.js >= 16
+- pnpm >= 7
+- Docker (用于运行 FunASR)
+
+### 安装步骤
+
+1. 克隆项目
 ```bash
-$ pnpm start
+git clone https://github.com/yourusername/smart-pet-with-mcp.git
+cd smart-pet-with-mcp
 ```
 
-### Build
-
+2. 安装依赖
 ```bash
-# For windows
-$ pnpm build:win
-
-# For macOS
-$ pnpm build:mac
-
-# For Linux
-$ pnpm build:linux
+pnpm install
 ```
 
-
-## 语音识别采用 FunASR
-
-### 镜像启动
+3. 启动开发环境
 ```bash
-sudo docker pull \
-  registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-online-cpu-0.1.12
+pnpm dev
+```
+
+### 构建应用
+
+```bash
+# Windows
+pnpm build:win
+
+# macOS
+pnpm build:mac
+
+# Linux
+pnpm build:linux
+```
+
+## FunASR 配置
+
+### 启动 Docker 容器
+```bash
+sudo docker pull registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-online-cpu-0.1.12
 mkdir -p ./funasr-runtime-resources/models
 sudo docker run -p 10096:10095 -it --privileged=true \
   -v $PWD/funasr-runtime-resources/models:/workspace/models \
   registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-online-cpu-0.1.12
 ```
-### 服务启动
+
+### 启动 FunASR 服务
 ```bash
 cd FunASR/runtime
-
 nohup bash run_server_2pass.sh \
   --model-dir damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-onnx \
   --online-model-dir damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online-onnx \
@@ -90,38 +115,55 @@ nohup bash run_server_2pass.sh \
   --hotword ../../hotwords.txt > log.txt 2>&1 &
 ```
 
+## 贡献指南
 
+欢迎提交 Issue 和 Pull Request 来帮助改进项目。在提交之前，请确保：
 
-## 欢迎大佬提出宝贵的建议和意见，提Issues，会不断进行优化和实现。
-## 联系与交流
+1. 代码符合项目的编码规范
+2. 提交信息清晰明确
+3. 测试覆盖新增功能
 
-### 联系作者
+## 在线演示
+
+- [视频演示](https://shijianzhong.github.io/7_1744033926.mp4)
+- [YouTube](https://www.youtube.com/watch?v=hSaFswzjQ2Q)
+- [Bilibili](https://www.bilibili.com/video/BV1irRUYrE4u)
+- [抖音](https://www.douyin.com/user/self?from_tab_name=main&modal_id=7490551766623292712)
+
+## 项目截图
+
+<img src="./resources/demo1.jpg" width="400" height="400">
+<img src="./resources/mcpsetting.jpg" width="400" height="400">
+
+## 联系与支持
+
+### 联系方式
 - **邮箱**：994129509@qq.com
 - **QQ群**：994129509
-  
-### 欢迎加入交流群，一起探讨和解决问题
 
+### 交流群
 <div align="center">
     <img src="./resources/wechat.jpg" width="400" height="400">
 </div>
 
-
-### 打赏作者
-<br/>
+### 支持项目
 <div align="center">
-<p>打赏一块钱支持一下作者</p>
+<p>感谢您的支持！</p>
 <div align="center">
     <img src="./resources/dashang.jpg" width="400" height="400">
 </div>
 </div>
 
+## 特别感谢
 
-## 💰 衷心感谢 **陆涛** 的慷慨打赏！  ¥ 10 元，您每一分钱都不会被辜负。💰  
-## 💰 衷心感谢 **大喵哥** 的慷慨打赏！  ¥ 50 元，您每一分钱都不会被辜负。💰    
-## 💰 衷心感谢 **蔡从洋Tom** 的慷慨打赏！  ¥ 1 元，您每一分钱都不会被辜负。💰    
-## 💰 衷心感谢 **简文斌** 的慷慨打赏！  ¥ 5 元，您每一分钱都不会被辜负。💰    
-## 💰 衷心感谢 **加油，支持** 的慷慨打赏！  ¥ 5 元，您每一分钱都不会被辜负。💰    
-## 💰 衷心感谢 **Tanix** 的慷慨打赏！  ¥ 5 元，您每一分钱都不会被辜负。💰    
-## 💰 衷心感谢 **朱松岭** 的慷慨打赏！  ¥ 5 元，您每一分钱都不会被辜负。💰     
-## 💰 衷心感谢 **Victor** 的慷慨打赏！  ¥ 5 元，您每一分钱都不会被辜负。💰    
-## 💰 衷心感谢 **kelly** 的慷慨打赏！  ¥ 1 元，您每一分钱都不会被辜负。💰  
+感谢以下赞助者的支持：
+
+- 陆涛 ¥10
+- 大喵哥 ¥50
+- 蔡从洋Tom ¥1
+- 简文斌 ¥5
+- 加油，支持 ¥5
+- Tanix ¥5
+- 朱松岭 ¥5
+- Victor ¥5
+- kelly ¥1
