@@ -4,11 +4,18 @@
 该应用是一个MCP-Client应用，可以自主无限搭配MCP-Server实现需求。
 
 ## 在线预览
-https://www.youtube.com/watch?v=hSaFswzjQ2Q
 
-https://www.bilibili.com/video/BV1irRUYrE4u/?spm_id_from=333.1387.homepage.video_card.click&vd_source=ac39552ce5c2d2d27cb66c496d000ae9
 
-https://www.douyin.com/user/self?from_tab_name=main&modal_id=7490551766623292712
+[观看视频](https://shijianzhong.github.io/7_1744033926.mp4)
+
+
+[![youtube]()](https://www.youtube.com/watch?v=hSaFswzjQ2Q)
+
+[![bilibili]()](https://www.bilibili.com/video/BV1irRUYrE4u/?spm_id_from=333.1387.homepage.video_card.click&vd_source=ac39552ce5c2d2d27cb66c496d000ae9)
+
+[![抖音]()](https://www.douyin.com/user/self?from_tab_name=main&modal_id=7490551766623292712)
+
+
 
 ## 截图
 <img src="./resources/demo1.jpg" width="400" height="400">
