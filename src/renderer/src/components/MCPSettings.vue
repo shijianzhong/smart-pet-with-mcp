@@ -13,7 +13,7 @@ const connectionType = ref('file') // 'file', 'npx', 'sse'
 
 // 计算保存按钮是否可用
 const canSave = computed(() => {
-  return serverPath.value && serverName.value && !isServerRunning.value
+  return serverPath.value && serverName.value
 })
 
 // 计算启动按钮是否可用
@@ -88,6 +88,23 @@ const saveServerConfig = async () => {
     await window.api.saveMCPServer(serverConfig)
     statusMessage.value = '配置已保存'
     await loadMCPServers() // 重新加载服务器列表
+    
+    // 添加新代码：自动重启所有服务器
+    if (isServerRunning.value) {
+      // 如果当前有服务器在运行，先停止
+      statusMessage.value = '正在重启所有服务器...'
+      window.electron.ipcRenderer.send('stop-mcp-server')
+      
+      // 等待一定时间确保服务器已停止
+      setTimeout(() => {
+        // 启动所有服务器
+        window.electron.ipcRenderer.send('start-all-mcp-servers')
+      }, 1000)
+    } else {
+      // 如果当前没有服务器在运行，直接启动所有服务器
+      statusMessage.value = '正在启动所有服务器...'
+      window.electron.ipcRenderer.send('start-all-mcp-servers')
+    }
   } catch (error) {
     console.error('保存MCP服务器配置失败:', error)
     statusMessage.value = '保存配置失败'
@@ -362,7 +379,6 @@ const showCustomContextMenu = (event) => {
               type="text" 
               v-model="serverName" 
               placeholder="输入服务器名称" 
-              :disabled="isServerRunning" 
               @paste="handlePaste($event, 'serverName')"
             />
           </div>
@@ -371,15 +387,15 @@ const showCustomContextMenu = (event) => {
             <label class="form-label">连接类型</label>
             <div class="radio-group">
               <label>
-                <input type="radio" v-model="connectionType" value="file" :disabled="isServerRunning" />
+                <input type="radio" v-model="connectionType" value="file" />
                 <span class="radio-text">文件</span>
               </label>
               <label>
-                <input type="radio" v-model="connectionType" value="npx" :disabled="isServerRunning" />
+                <input type="radio" v-model="connectionType" value="npx" />
                 <span class="radio-text">NPX命令</span>
               </label>
               <label>
-                <input type="radio" v-model="connectionType" value="sse" :disabled="isServerRunning" />
+                <input type="radio" v-model="connectionType" value="sse" />
                 <span class="radio-text">SSE连接</span>
               </label>
             </div>
@@ -389,11 +405,11 @@ const showCustomContextMenu = (event) => {
             <label class="form-label">服务器类型</label>
             <div class="radio-group">
               <label>
-                <input type="radio" v-model="serverType" value="js" :disabled="isServerRunning" />
+                <input type="radio" v-model="serverType" value="js" />
                 <span class="radio-text">JavaScript</span>
               </label>
               <label>
-                <input type="radio" v-model="serverType" value="py" :disabled="isServerRunning" />
+                <input type="radio" v-model="serverType" value="py" />
                 <span class="radio-text">Python</span>
               </label>
             </div>
@@ -407,11 +423,10 @@ const showCustomContextMenu = (event) => {
                 type="text" 
                 v-model="serverPath" 
                 :placeholder="pathPlaceholder" 
-                :disabled="isServerRunning" 
                 @paste="handlePaste($event, 'serverPath')"
                 @contextmenu="showCustomContextMenu($event)"
               />
-              <button v-if="showBrowseButton" @click="browseFile" :disabled="isServerRunning">浏览...</button>
+              <button v-if="showBrowseButton" @click="browseFile">浏览...</button>
             </div>
           </div>
           
@@ -449,8 +464,8 @@ const showCustomContextMenu = (event) => {
                 </div>
               </div>
               <div class="server-actions">
-                <button @click="loadServerConfig(server.id)" :disabled="isServerRunning" class="load-btn">加载</button>
-                <button @click="deleteServerConfig(server.id)" :disabled="isServerRunning" class="delete-btn">删除</button>
+                <button @click="loadServerConfig(server.id)" class="load-btn">加载</button>
+                <button @click="deleteServerConfig(server.id)" class="delete-btn">删除</button>
               </div>
             </li>
           </ul>
