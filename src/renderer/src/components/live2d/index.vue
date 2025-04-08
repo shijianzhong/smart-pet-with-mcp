@@ -737,7 +737,7 @@
             console.error('播放随机动作失败:', error);
           }
         }
-      }, 2000 + Math.random() * 1000);
+      }, 15000 + Math.random() * 1000);
       
       // 添加鼠标跟随功能
       document.addEventListener('mousemove', (e) => {

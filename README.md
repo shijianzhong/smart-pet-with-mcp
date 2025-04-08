@@ -3,7 +3,14 @@
 一个基于MCP协议的智能宠物伴侣应用，通过语音识别和自然语言处理技术，为宠物主人提供实时互动和服务。
 该应用是一个MCP-Client应用，可以自主无限搭配MCP-Server实现需求。
 
-<video width="640" height="480" controls src="./resources/show.mp4"></video>
+## 在线预览
+https://www.youtube.com/watch?v=hSaFswzjQ2Q
+
+https://www.bilibili.com/video/BV1irRUYrE4u/?spm_id_from=333.1387.homepage.video_card.click&vd_source=ac39552ce5c2d2d27cb66c496d000ae9
+
+https://www.douyin.com/user/self?from_tab_name=main&modal_id=7490551766623292712
+
+## 截图
 <img src="./resources/demo1.jpg" width="400" height="400">
 <img src="./resources/mcpsetting.jpg" width="400" height="400">
 
