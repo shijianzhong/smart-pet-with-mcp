@@ -158,6 +158,7 @@ nohup bash run_server_2pass.sh \
 
 感谢以下赞助者的支持：
 
+- 红薯队长 ¥5
 - 陆涛 ¥10
 - 大喵哥 ¥50
 - 蔡从洋Tom ¥1
