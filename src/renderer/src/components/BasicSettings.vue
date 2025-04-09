@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 
 // 大模型配置
 const llmBaseUrl = ref('')
@@ -41,7 +41,84 @@ onMounted(async () => {
     console.error('加载配置失败:', error)
     statusMessage.value = '加载配置失败'
   }
+  
+  // 添加全局键盘快捷键监听
+  document.addEventListener('keydown', handleKeyDown)
 })
+
+// 组件卸载时移除事件监听
+onUnmounted(() => {
+  // 移除全局键盘快捷键监听
+  document.removeEventListener('keydown', handleKeyDown)
+})
+
+// 处理键盘快捷键
+const handleKeyDown = async (event) => {
+  // 检测常见的粘贴快捷键 (Ctrl+V 或 Command+V)
+  if ((event.ctrlKey || event.metaKey) && event.key === 'v') {
+    console.log('检测到粘贴快捷键');
+    
+    // 获取当前焦点元素
+    const activeElement = document.activeElement;
+    if (activeElement && 
+        (activeElement.tagName === 'INPUT' || 
+         activeElement.tagName === 'TEXTAREA')) {
+      
+      // 尝试获取剪贴板文本
+      try {
+        let clipboardText = '';
+        
+        // 首先尝试直接API
+        try {
+          clipboardText = await window.api.getClipboardText();
+        } catch (err) {
+          // 如果失败，尝试IPC方式
+          clipboardText = await window.api.readClipboardText();
+        }
+        
+        if (clipboardText) {
+          console.log('从剪贴板获取文本:', clipboardText);
+          
+          // 根据输入框的id或其他属性更新对应的数据模型
+          const inputId = activeElement.id;
+          const inputName = activeElement.name;
+          
+          if (inputId === 'llm-base-url' || inputName === 'llmBaseUrl') {
+            llmBaseUrl.value = clipboardText;
+          } else if (inputId === 'llm-model' || inputName === 'llmModel') {
+            llmModel.value = clipboardText;
+          } else if (inputId === 'llm-secret-key' || inputName === 'llmSecretKey') {
+            llmSecretKey.value = clipboardText;
+          } else if (inputId === 'funasr-address' || inputName === 'funasrAddress') {
+            funasrAddress.value = clipboardText;
+          } else {
+            // 尝试直接插入到输入框
+            const start = activeElement.selectionStart || 0;
+            const end = activeElement.selectionEnd || 0;
+            const value = activeElement.value || '';
+            
+            // 组合新值
+            const newValue = value.substring(0, start) + 
+                           clipboardText + 
+                           value.substring(end);
+            
+            // 更新输入框值
+            activeElement.value = newValue;
+            
+            // 触发input事件来更新v-model
+            activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+            
+            // 更新光标位置
+            activeElement.selectionStart = activeElement.selectionEnd = 
+              start + clipboardText.length;
+          }
+        }
+      } catch (err) {
+        console.error('处理粘贴快捷键时出错:', err);
+      }
+    }
+  }
+}
 
 // 保存所有配置
 const saveAllSettings = async () => {
@@ -76,43 +153,95 @@ const closeWindow = () => {
   window.api.closeBasicSettingsDialog()
 }
 
-// 处理粘贴事件
+// 处理复制事件
+const handleCopy = async (event, text) => {
+  try {
+    await window.api.setClipboardText(text)
+  } catch (err) {
+    console.error('复制到剪贴板失败:', err)
+  }
+}
+
+// 处理剪切事件
+const handleCut = async (event, field) => {
+  try {
+    const text = event.target.value
+    await window.api.setClipboardText(text)
+    
+    // 清空对应字段
+    switch (field) {
+      case 'llmBaseUrl':
+        llmBaseUrl.value = ''
+        break
+      case 'llmModel':
+        llmModel.value = ''
+        break
+      case 'llmSecretKey':
+        llmSecretKey.value = ''
+        break
+      case 'funasrAddress':
+        funasrAddress.value = ''
+        break
+    }
+  } catch (err) {
+    console.error('剪切到剪贴板失败:', err)
+  }
+}
+
+// 普通粘贴处理函数
+const normalPaste = (event, field) => {
+  // 不阻止默认粘贴
+  console.log(`粘贴到 ${field}`)
+}
+
+// 备用粘贴处理方法
 const handlePaste = async (event, field) => {
-  event.preventDefault()
+  console.log(`尝试粘贴到 ${field}`)
+  // 阻止默认粘贴行为，我们将手动处理
+  event.preventDefault();
+
+  let pastedText = '';
   
-  let pastedText = ''
-  
+  // 首先尝试从剪贴板事件获取文本
   if (event.clipboardData && event.clipboardData.getData) {
-    pastedText = event.clipboardData.getData('text/plain')
+    pastedText = event.clipboardData.getData('text/plain');
   }
   
+  // 如果事件中没有数据，尝试通过API获取
   if (!pastedText) {
     try {
-      pastedText = await window.api.getClipboardText()
+      // 尝试读取系统剪贴板
+      pastedText = await window.api.getClipboardText();
     } catch (err) {
-      console.error('读取剪贴板失败:', err)
+      console.error('读取剪贴板失败:', err);
+      
+      // 尝试使用IPC通道读取
       try {
-        pastedText = await window.api.readClipboardText()
+        pastedText = await window.api.readClipboardText();
       } catch (err2) {
-        console.error('通过IPC读取剪贴板失败:', err2)
+        console.error('通过IPC读取剪贴板失败:', err2);
       }
     }
   }
   
+  // 确保在控制台打印粘贴的内容（用于调试）
+  console.log('粘贴的内容:', pastedText);
+  
+  // 如果成功获取到文本，设置到对应字段
   if (pastedText) {
     switch (field) {
       case 'llmBaseUrl':
-        llmBaseUrl.value = pastedText
-        break
+        llmBaseUrl.value = pastedText;
+        break;
       case 'llmModel':
-        llmModel.value = pastedText
-        break
+        llmModel.value = pastedText;
+        break;
       case 'llmSecretKey':
-        llmSecretKey.value = pastedText
-        break
+        llmSecretKey.value = pastedText;
+        break;
       case 'funasrAddress':
-        funasrAddress.value = pastedText
-        break
+        funasrAddress.value = pastedText;
+        break;
     }
   }
 }
@@ -135,9 +264,10 @@ const handlePaste = async (event, field) => {
             <label class="form-label">API地址 (BaseURL)</label>
             <input 
               type="text" 
+              id="llm-base-url"
+              name="llmBaseUrl"
               v-model="llmBaseUrl" 
               placeholder="请输入API地址，例如：https://api.example.com/v1" 
-              @paste="handlePaste($event, 'llmBaseUrl')"
             />
           </div>
           
@@ -145,9 +275,10 @@ const handlePaste = async (event, field) => {
             <label class="form-label">模型名称 (Model)</label>
             <input 
               type="text" 
+              id="llm-model"
+              name="llmModel"
               v-model="llmModel" 
               placeholder="请输入模型名称" 
-              @paste="handlePaste($event, 'llmModel')"
             />
           </div>
           
@@ -155,9 +286,10 @@ const handlePaste = async (event, field) => {
             <label class="form-label">密钥 (API Key)</label>
             <input 
               type="password" 
+              id="llm-secret-key"
+              name="llmSecretKey"
               v-model="llmSecretKey" 
               placeholder="请输入API密钥" 
-              @paste="handlePaste($event, 'llmSecretKey')"
             />
           </div>
         </div>
@@ -170,9 +302,10 @@ const handlePaste = async (event, field) => {
             <label class="form-label">FunASR服务地址</label>
             <input 
               type="text" 
+              id="funasr-address"
+              name="funasrAddress"
               v-model="funasrAddress" 
               placeholder="请输入FunASR服务地址，例如：http://localhost:10095" 
-              @paste="handlePaste($event, 'funasrAddress')"
             />
           </div>
         </div>

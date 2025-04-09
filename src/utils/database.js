@@ -48,9 +48,19 @@ export default class DatabaseManager {
         verbose: console.log 
       });
       
-      // 创建服务器配置表，添加状态字段和连接类型字段
-      console.log('创建或验证数据库表结构');
+      // 删除并重建 basic_settings 表  DROP TABLE IF EXISTS basic_settings;
       this.db.exec(`
+        
+        
+        CREATE TABLE IF NOT EXISTS basic_settings (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          value TEXT,
+          category TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(category, name)
+        );
+        
         CREATE TABLE IF NOT EXISTS mcp_servers (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
@@ -59,14 +69,6 @@ export default class DatabaseManager {
           status TEXT DEFAULT '未启动',
           isRunning INTEGER DEFAULT 0,
           connectionType TEXT DEFAULT 'file',
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        
-        CREATE TABLE IF NOT EXISTS basic_settings (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          value TEXT,
-          category TEXT NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
@@ -323,29 +325,16 @@ export default class DatabaseManager {
       
       console.log(`保存设置: ${name} = ${value} (${category})`);
       
-      // 检查是否已存在相同名称的配置
-      const existingSetting = this.db.prepare('SELECT * FROM basic_settings WHERE name = ? AND category = ?').get(name, category);
-      if (existingSetting) {
-        // 如果存在，更新配置
-        console.log(`更新现有设置 ID:${existingSetting.id}`);
-        const stmt = this.db.prepare(
-          'UPDATE basic_settings SET value = ?, created_at = CURRENT_TIMESTAMP WHERE name = ? AND category = ?'
-        );
-        stmt.run(value, name, category);
-        return existingSetting.id;
-      } else {
-        // 如果不存在，添加新配置
-        console.log('添加新的设置');
-        const stmt = this.db.prepare(
-          'INSERT INTO basic_settings (name, value, category) VALUES (?, ?, ?)'
-        );
-        const info = stmt.run(name, value, category);
-        console.log(`新添加的设置ID: ${info.lastInsertRowid}`);
-        return info.lastInsertRowid;
-      }
+      // 使用 INSERT OR REPLACE 来处理插入或更新
+      const stmt = this.db.prepare(
+        'INSERT OR REPLACE INTO basic_settings (name, value, category) VALUES (?, ?, ?)'
+      );
+      const info = stmt.run(name, value, category);
+      console.log(`保存设置结果: ${info.lastInsertRowid}`);
+      return info.lastInsertRowid;
     } catch (error) {
       console.error('保存设置失败:', error);
-      return null;
+      throw error;
     }
   }
 
@@ -367,26 +356,30 @@ export default class DatabaseManager {
   batchSaveSettings(settings) {
     try {
       this.ensureConnection();
+      
+      // 开始事务
       this.db.exec('BEGIN TRANSACTION');
       
-      const insertStmt = this.db.prepare(
-        'INSERT OR REPLACE INTO basic_settings (name, value, category) VALUES (?, ?, ?)'
-      );
-      
-      settings.forEach(setting => {
-        insertStmt.run(setting.name, setting.value, setting.category);
-      });
-      
-      this.db.exec('COMMIT');
-      return true;
+      try {
+        const stmt = this.db.prepare(
+          'INSERT OR REPLACE INTO basic_settings (name, value, category) VALUES (?, ?, ?)'
+        );
+        
+        settings.forEach(setting => {
+          stmt.run(setting.name, setting.value, setting.category);
+        });
+        
+        // 提交事务
+        this.db.exec('COMMIT');
+        return true;
+      } catch (error) {
+        // 回滚事务
+        this.db.exec('ROLLBACK');
+        throw error;
+      }
     } catch (error) {
       console.error('批量保存设置失败:', error);
-      try {
-        this.db.exec('ROLLBACK');
-      } catch (rollbackErr) {
-        console.error('回滚事务失败:', rollbackErr);
-      }
-      return false;
+      throw error;
     }
   }
 } 

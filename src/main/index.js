@@ -922,14 +922,25 @@ app.whenReady().then(async () => {
   
   // 剪贴板相关IPC处理
   ipcMain.handle('read-clipboard-text', () => {
-    console.log('读取剪贴板内容');
-    return clipboard.readText();
+    try {
+      const text = clipboard.readText();
+      console.log('读取剪贴板内容成功:', text);
+      return text;
+    } catch (err) {
+      console.error('读取剪贴板出错:', err);
+      return '';
+    }
   });
   
   ipcMain.handle('write-clipboard-text', (event, text) => {
-    console.log('写入剪贴板内容:', text);
-    clipboard.writeText(text);
-    return true;
+    try {
+      console.log('写入剪贴板内容:', text);
+      clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.error('写入剪贴板出错:', err);
+      return false;
+    }
   });
   
   // 等待一会儿让窗口加载完成
