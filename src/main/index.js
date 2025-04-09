@@ -67,6 +67,13 @@ function createWindow() {
           }
         },
         { 
+          label: '基础配置',
+          click: () => {
+            // 创建基础配置设置弹窗
+            createBasicSettingsDialog(mainWindow)
+          }
+        },
+        { 
           label: '换装',
           click: () => {
             // 通知渲染进程打开换装对话框
@@ -221,6 +228,54 @@ function createMCPDialog(parent) {
   })
   
   return mcpDialog
+}
+
+// 创建基础配置设置弹窗
+function createBasicSettingsDialog(parent) {
+  const basicSettingsDialog = new BrowserWindow({
+    width: 600,
+    height: 500,
+    parent: parent,
+    modal: true,
+    show: false,
+    resizable: true,
+    minimizable: false,
+    maximizable: false,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      webSecurity: false,
+      contextIsolation: true,
+      nodeIntegration: true,
+      allowRunningInsecureContent: true,
+      spellcheck: true,
+      enableWebSQL: false,
+      clipboard: true
+    },
+    escapeExitsFullScreen: true
+  })
+
+  basicSettingsDialog.setMenu(null)
+  
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    basicSettingsDialog.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/#/basic-settings`)
+  } else {
+    basicSettingsDialog.loadFile(path.join(__dirname, '../renderer/index.html'), {
+      hash: 'basic-settings'
+    })
+  }
+
+  basicSettingsDialog.once('ready-to-show', () => {
+    basicSettingsDialog.show()
+  })
+  
+  global.basicSettingsDialog = basicSettingsDialog
+  
+  basicSettingsDialog.on('closed', () => {
+    global.basicSettingsDialog = null
+  })
+  
+  return basicSettingsDialog
 }
 
 // 添加初始化函数，用于检查和更新 MCP 服务器路径
@@ -959,5 +1014,42 @@ process.on('exit', (code) => {
     dbManager.close();
   } catch (err) {
     console.error('关闭数据库连接出错:', err);
+  }
+});
+
+// 获取基础设置
+ipcMain.handle('get-basic-settings', async (_, category) => {
+  try {
+    return dbManager.getBasicSettings(category);
+  } catch (error) {
+    console.error('获取基础设置失败:', error);
+    return [];
+  }
+});
+
+// 保存单个基础设置
+ipcMain.handle('save-basic-setting', async (_, { name, value, category }) => {
+  try {
+    return dbManager.saveBasicSetting(name, value, category);
+  } catch (error) {
+    console.error('保存基础设置失败:', error);
+    return null;
+  }
+});
+
+// 批量保存设置
+ipcMain.handle('batch-save-settings', async (_, settings) => {
+  try {
+    return dbManager.batchSaveSettings(settings);
+  } catch (error) {
+    console.error('批量保存设置失败:', error);
+    return false;
+  }
+});
+
+// 关闭基础设置对话框
+ipcMain.on('close-basic-settings-dialog', () => {
+  if (global.basicSettingsDialog && !global.basicSettingsDialog.isDestroyed()) {
+    global.basicSettingsDialog.close();
   }
 });

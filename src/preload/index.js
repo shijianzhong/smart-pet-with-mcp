@@ -52,6 +52,12 @@ const api = {
   deleteMCPServer: (serverId) => ipcRenderer.invoke('delete-mcp-server', serverId),
   loadMCPServer: (serverId) => ipcRenderer.invoke('load-mcp-server', serverId),
   
+  // 基础设置相关API
+  getBasicSettings: (category) => ipcRenderer.invoke('get-basic-settings', category),
+  saveBasicSetting: (name, value, category) => ipcRenderer.invoke('save-basic-setting', { name, value, category }),
+  batchSaveSettings: (settings) => ipcRenderer.invoke('batch-save-settings', settings),
+  closeBasicSettingsDialog: () => ipcRenderer.send('close-basic-settings-dialog'),
+  
   // 剪贴板相关API
   readClipboardText: () => ipcRenderer.invoke('read-clipboard-text'),
   writeClipboardText: (text) => ipcRenderer.invoke('write-clipboard-text', text),

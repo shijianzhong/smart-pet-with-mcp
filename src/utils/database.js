@@ -61,6 +61,14 @@ export default class DatabaseManager {
           connectionType TEXT DEFAULT 'file',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        
+        CREATE TABLE IF NOT EXISTS basic_settings (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          value TEXT,
+          category TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
       `);
       
       // 检查是否需要添加connectionType列
@@ -273,6 +281,111 @@ export default class DatabaseManager {
       return info.changes > 0;
     } catch (error) {
       console.error('更新服务器路径失败:', error);
+      return false;
+    }
+  }
+
+  // 获取基础设置
+  getBasicSettings(category) {
+    try {
+      this.ensureConnection();
+      
+      if (category) {
+        const stmt = this.db.prepare('SELECT * FROM basic_settings WHERE category = ? ORDER BY id');
+        return stmt.all(category);
+      } else {
+        const stmt = this.db.prepare('SELECT * FROM basic_settings ORDER BY category, id');
+        return stmt.all();
+      }
+    } catch (error) {
+      console.error('获取基础设置失败:', error);
+      return [];
+    }
+  }
+
+  // 通过名称获取特定设置
+  getSettingByName(name, category) {
+    try {
+      this.ensureConnection();
+      
+      const stmt = this.db.prepare('SELECT * FROM basic_settings WHERE name = ? AND category = ? LIMIT 1');
+      return stmt.get(name, category);
+    } catch (error) {
+      console.error(`获取设置[${name}]失败:`, error);
+      return null;
+    }
+  }
+
+  // 保存基础设置
+  saveBasicSetting(name, value, category) {
+    try {
+      this.ensureConnection();
+      
+      console.log(`保存设置: ${name} = ${value} (${category})`);
+      
+      // 检查是否已存在相同名称的配置
+      const existingSetting = this.db.prepare('SELECT * FROM basic_settings WHERE name = ? AND category = ?').get(name, category);
+      if (existingSetting) {
+        // 如果存在，更新配置
+        console.log(`更新现有设置 ID:${existingSetting.id}`);
+        const stmt = this.db.prepare(
+          'UPDATE basic_settings SET value = ?, created_at = CURRENT_TIMESTAMP WHERE name = ? AND category = ?'
+        );
+        stmt.run(value, name, category);
+        return existingSetting.id;
+      } else {
+        // 如果不存在，添加新配置
+        console.log('添加新的设置');
+        const stmt = this.db.prepare(
+          'INSERT INTO basic_settings (name, value, category) VALUES (?, ?, ?)'
+        );
+        const info = stmt.run(name, value, category);
+        console.log(`新添加的设置ID: ${info.lastInsertRowid}`);
+        return info.lastInsertRowid;
+      }
+    } catch (error) {
+      console.error('保存设置失败:', error);
+      return null;
+    }
+  }
+
+  // 删除基础设置
+  deleteBasicSetting(id) {
+    try {
+      this.ensureConnection();
+      
+      const stmt = this.db.prepare('DELETE FROM basic_settings WHERE id = ?');
+      const info = stmt.run(id);
+      return info.changes > 0;
+    } catch (error) {
+      console.error('删除设置失败:', error);
+      return false;
+    }
+  }
+  
+  // 批量保存设置
+  batchSaveSettings(settings) {
+    try {
+      this.ensureConnection();
+      this.db.exec('BEGIN TRANSACTION');
+      
+      const insertStmt = this.db.prepare(
+        'INSERT OR REPLACE INTO basic_settings (name, value, category) VALUES (?, ?, ?)'
+      );
+      
+      settings.forEach(setting => {
+        insertStmt.run(setting.name, setting.value, setting.category);
+      });
+      
+      this.db.exec('COMMIT');
+      return true;
+    } catch (error) {
+      console.error('批量保存设置失败:', error);
+      try {
+        this.db.exec('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('回滚事务失败:', rollbackErr);
+      }
       return false;
     }
   }
