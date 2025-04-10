@@ -1,5 +1,5 @@
 {
-  "name": "smart-pet-with-mcp",
+  "name": "smart-pet",
   "version": "1.0.0",
   "description": "An Electron application with Vue",
   "main": "./out/main/index.js",
@@ -10,13 +10,14 @@
     "lint": "eslint --cache .",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "build": "electron-vite build && npm run copy-models",
+    "build": "electron-vite build && npm run copy-models && npm run copy-trayicon",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
     "copy-models": "cp -R resources/models out/renderer/",
+    "copy-trayicon": "cp resources/trayicon.png build/",
     "mcp-server": "npx --no-install @modelcontextprotocol/server-filesystem .",
     "mcp-server:debug": "npx --no-install @modelcontextprotocol/server-filesystem . --debug"
   },

@@ -8,6 +8,9 @@ files:
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+extraResources:
+  - from: "build/trayicon.png"
+    to: "trayicon.png"
 asarUnpack:
   - resources/**
 win:

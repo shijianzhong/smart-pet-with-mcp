@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, Menu, dialog, globalShortcut, clipboard } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Menu, dialog, globalShortcut, clipboard, Tray } from 'electron'
 import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -14,6 +14,9 @@ let globalMCPClient = null;
 
 // 用于存储已注册的快捷键和对应通道
 const registeredShortcuts = new Map();
+
+// 全局变量，用于存储托盘对象
+let tray = null;
 
 function createWindow() {
   // Create the browser window.
@@ -31,11 +34,11 @@ function createWindow() {
     resizable: false, // 禁止调整窗口大小
     maximizable: false, // 禁止最大化
     fullscreenable: false, // 禁止全屏
-    ...(process.platform === 'linux' ? { icon } : {}),
+    icon, // 在所有平台上使用icon.png作为应用图标
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false,
-      webSecurity: false, // 允许加载本地资源
+      webSecurity: false, // 允用加载本地资源
       contextIsolation: true,
       nodeIntegration: true, // 允许在渲染进程中使用Node API
       allowRunningInsecureContent: true // 允许加载不安全内容
@@ -60,19 +63,20 @@ function createWindow() {
       label: '设置',
       submenu: [
         { 
-          label: 'MCP',
-          click: () => {
-            // 创建MCP服务器设置弹窗
-            createMCPDialog(mainWindow)
-          }
-        },
-        { 
           label: '基础配置',
           click: () => {
             // 创建基础配置设置弹窗
             createBasicSettingsDialog(mainWindow)
           }
         },
+        { 
+          label: 'MCP',
+          click: () => {
+            // 创建MCP服务器设置弹窗
+            createMCPDialog(mainWindow)
+          }
+        },
+
         { 
           label: '换装',
           click: () => {
@@ -180,6 +184,7 @@ function createMCPDialog(parent) {
     resizable: true,
     minimizable: false,
     maximizable: false,
+    icon, // 使用相同的图标
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -241,6 +246,7 @@ function createBasicSettingsDialog(parent) {
     resizable: true,
     minimizable: false,
     maximizable: false,
+    icon, // 使用相同的图标
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -334,6 +340,134 @@ function initMcpServerPaths() {
 app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
+
+  // 创建系统托盘
+  try {
+    const { nativeImage } = require('electron');
+    
+    // 使用专门的托盘图标，不同平台使用不同大小
+    let trayIconPath;
+    
+    // 根据平台和打包状态选择正确的图标路径
+    if (app.isPackaged) {
+      // 打包后的路径
+      if (process.platform === 'darwin') {
+        // macOS使用16x16的图标
+        trayIconPath = path.join(process.resourcesPath, 'trayicon.png');
+      } else if (process.platform === 'win32') {
+        // Windows使用16x16的图标
+        trayIconPath = path.join(process.resourcesPath, 'trayicon.png');
+      } else {
+        // Linux使用24x24的图标
+        trayIconPath = path.join(process.resourcesPath, 'trayicon.png');
+      }
+    } else {
+      // 开发环境路径
+      trayIconPath = path.join(app.getAppPath(), 'resources', 'trayicon.png');
+      
+      // 如果没有专用图标，则回退到普通图标
+      if (!fs.existsSync(trayIconPath)) {
+        trayIconPath = path.join(app.getAppPath(), 'resources', 'icon.png');
+      }
+    }
+    
+    console.log(`使用托盘图标: ${trayIconPath}`);
+    
+    // 创建托盘图标
+    let trayIcon;
+    
+    if (fs.existsSync(trayIconPath)) {
+      // 直接使用专用托盘图标，不调整大小
+      trayIcon = nativeImage.createFromPath(trayIconPath);
+      
+      // 设置适当的图标大小，确保图标适合托盘
+      if (process.platform === 'darwin') {
+        trayIcon = trayIcon.resize({ width: 16, height: 16 });
+      } else if (process.platform === 'win32') {
+        trayIcon = trayIcon.resize({ width: 16, height: 16 });
+      } else {
+        trayIcon = trayIcon.resize({ width: 24, height: 24 });
+      }
+    } else {
+      console.log('找不到托盘图标文件，使用默认导入的图标');
+      trayIcon = icon;
+    }
+    
+    tray = new Tray(trayIcon);
+    
+    // 在macOS上，托盘图标需要特殊处理
+    if (process.platform === 'darwin') {
+      // 设置为模板图像，让macOS自动处理亮/暗模式
+      tray.setIgnoreDoubleClickEvents(true);
+      app.dock.setIcon(icon); // Dock图标使用原始大小的图标
+    }
+  } catch (err) {
+    console.error('创建托盘图标失败:', err);
+    // 使用导入的图标作为备用
+    tray = new Tray(icon);
+  }
+  
+  const contextMenu = Menu.buildFromTemplate([
+    { 
+      label: '显示主窗口',
+      click: () => {
+        const windows = BrowserWindow.getAllWindows();
+        if (windows.length > 0) {
+          const mainWindow = windows[0];
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        } else {
+          createWindow();
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'MCP设置',
+      click: () => {
+        const windows = BrowserWindow.getAllWindows();
+        if (windows.length > 0) {
+          createMCPDialog(windows[0]);
+        } else {
+          const mainWindow = createWindow();
+          createMCPDialog(mainWindow);
+        }
+      }
+    },
+    {
+      label: '基础配置',
+      click: () => {
+        const windows = BrowserWindow.getAllWindows();
+        if (windows.length > 0) {
+          createBasicSettingsDialog(windows[0]);
+        } else {
+          const mainWindow = createWindow();
+          createBasicSettingsDialog(mainWindow);
+        }
+      }
+    },
+    { type: 'separator' },
+    { 
+      label: '退出应用',
+      role: 'quit'
+    }
+  ]);
+  tray.setToolTip('Smart Pet with MCP');
+  tray.setContextMenu(contextMenu);
+  
+  // 点击托盘图标显示主窗口
+  tray.on('click', () => {
+    const windows = BrowserWindow.getAllWindows();
+    if (windows.length > 0) {
+      const mainWindow = windows[0];
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    } else {
+      createWindow();
+    }
+  });
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -1001,6 +1135,12 @@ app.on('will-quit', () => {
   try {
     console.log('应用即将退出，关闭数据库连接...');
     dbManager.close();
+    
+    // 清理托盘图标
+    if (tray) {
+      tray.destroy();
+      tray = null;
+    }
   } catch (error) {
     console.error('关闭数据库连接出错:', error);
   }
