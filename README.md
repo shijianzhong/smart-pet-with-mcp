@@ -2,6 +2,9 @@
 
 一个基于 MCP（Model Context Protocol）协议的智能宠物伴侣应用，通过语音识别和自然语言处理技术，为宠物主人提供实时互动和服务。该应用是一个 MCP-Client 应用，可以自主无限搭配 MCP-Server 实现需求。
 
+配合测试的mcp server 开源地址：https://github.com/shijianzhong/mcp-server-for-pc
+该mcp server 主要是用来操作个人PC的，比如打开浏览器，打开应用，打开文件，播放音乐，发送邮件等。
+
 ## 项目特点
 
 - 🎯 **智能交互**：通过语音识别和自然语言处理实现智能对话
