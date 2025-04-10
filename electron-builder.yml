@@ -28,6 +28,12 @@ mac:
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  artifactName: ${name}-${version}-mac.${ext}
+  target:
+    - target: dmg
+    - target: zip
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
@@ -39,7 +45,9 @@ linux:
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
-npmRebuild: false
+npmRebuild: true
+buildDependenciesFromSource: true
+nodeGypRebuild: false
 publish:
   provider: generic
   url: https://example.com/auto-updates
