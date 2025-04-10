@@ -234,13 +234,17 @@ class MCPClient {
    openai; // 替换 anthropic 为 openai
    transport = null;
    tools = [];
+   config;
 
   constructor() {
-    // 使用 OpenAI 客户端替换 Anthropic
-    this.openai = new OpenAI({
+    // 默认配置，将在connectToServer中被实际配置替换
+    this.config = {
       apiKey: "sk-fastgpt",
       baseURL: "http://localhost:3001/v1",
-    });
+      model: "qwen-turbo"
+    };
+    
+    // 延迟初始化OpenAI实例，等待从数据库加载配置
     // 增加超时设置，将默认的60秒增加到300秒
     this.mcp = new Client({ 
       name: "mcp-client-cli", 
@@ -249,34 +253,87 @@ class MCPClient {
     });
   }
   
-  // methods will go here
+  // 初始化OpenAI客户端
+  async initOpenAI() {
+    try {
+      // 导入DatabaseManager
+      const { default: DatabaseManager } = await import('./database.js');
+      const dbManager = new DatabaseManager();
+      
+      // 获取LLM配置
+      const llmSettings = await dbManager.getBasicSettings('llm');
+      
+      if (llmSettings && llmSettings.length > 0) {
+        // 遍历设置
+        llmSettings.forEach(setting => {
+          if (setting.name === 'baseUrl' && setting.value) {
+            this.config.baseURL = setting.value;
+          } else if (setting.name === 'secretKey' && setting.value) {
+            this.config.apiKey = setting.value;
+          } else if (setting.name === 'model' && setting.value) {
+            this.config.model = setting.value;
+          }
+        });
+      }
+      
+      console.log('OpenAI配置已加载:', {
+        baseURL: this.config.baseURL,
+        model: this.config.model,
+        // 不打印API密钥，仅指示是否存在
+        apiKeySet: !!this.config.apiKey
+      });
+      
+      // 使用配置初始化OpenAI
+      this.openai = new OpenAI({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseURL,
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('初始化OpenAI配置失败:', error);
+      
+      // 使用默认配置作为备选
+      this.openai = new OpenAI({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseURL,
+      });
+      
+      return false;
+    }
+  }
+
   async connectToServer(serverScriptPath) {
     try {
-      // 检查是否是URL（用于SSE连接）
+      // 首先初始化OpenAI配置
+      await this.initOpenAI();
+      
+      // 检查服务器路径是否是URL
       if (serverScriptPath.startsWith('http')) {
-        console.log(`【e-mcp-client.js】使用SSE连接到服务器: ${serverScriptPath}`);
+        console.log('连接到SSE服务器:', serverScriptPath);
         this.transport = new SSEClientTransport(serverScriptPath);
         await this.transport.start();
-        this.mcp.connect(this.transport);
+        return true;
+      }
+      
+      // 检查是否是使用npx命令启动服务器
+      if (serverScriptPath.includes('npx ')) {
+        console.log('使用npx命令启动服务器:', serverScriptPath);
+        const command = 'npx';
+        const args = serverScriptPath.replace('npx ', '').split(' ');
         
-        const toolsResult = await this.mcp.listTools();
-        this.tools = toolsResult.tools.map((tool) => {
-          return {
-            type: "function",
-            function: {
-              name: tool.name,
-              description: tool.description,
-              parameters: tool.inputSchema
-            }
-          };
+        const process = spawn(command, args, {
+          shell: true,
+          stdio: ['pipe', 'pipe', 'pipe']
         });
         
-        console.log(
-          "已通过SSE连接到服务器，可用工具:",
-          this.tools.map(({ name }) => name)
-        );
+        this.transport = new CustomStdioClientTransport({ process });
         
-        return;
+        // 等待一段时间确保服务器启动
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        await this.transport.start();
+        return true;
       }
       
       const isJs = serverScriptPath.endsWith(".js");
@@ -586,7 +643,7 @@ class MCPClient {
       
       // 根据tools是否为空决定是否添加tools参数
       const requestOptions = {
-        model: "qwen-turbo",
+        model: this.config.model,
         max_tokens: 1000,
         messages,
       };
@@ -656,7 +713,7 @@ class MCPClient {
           try {
             // 再次调用 OpenAI API 来处理工具结果
             const followupResponse = await this.openai.chat.completions.create({
-              model: "qwen-turbo",
+              model: this.config.model,
               max_tokens: 1000,
               messages,
             });

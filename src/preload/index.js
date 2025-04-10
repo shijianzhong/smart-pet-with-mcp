@@ -22,6 +22,11 @@ const api = {
     ipcRenderer.on('open-change-model-dialog', () => callback())
     return () => ipcRenderer.removeListener('open-change-model-dialog', callback)
   },
+  // ASR设置更新事件
+  onAsrSettingsUpdated: (callback) => {
+    ipcRenderer.on('asr-settings-updated', (_, settings) => callback(settings))
+    return () => ipcRenderer.removeListener('asr-settings-updated', callback)
+  },
   // 获取资源文件的绝对路径
   getResourcePath: (relativePath) => ipcRenderer.invoke('get-resource-path', relativePath),
   

@@ -17,8 +17,8 @@ const speechStatus = ref('idle') // idle, connecting, recording, processing, err
 const speechRecognizer = ref(null)
 const serverAvailable = ref(false)
 const realtimeText = ref('') // 添加实时识别文本
-// 语音识别服务地址
-const asrServerUrl = 'ws://127.0.0.1:10096/'
+// 语音识别服务地址 - 默认值，将从配置中加载
+const asrServerUrl = ref('ws://127.0.0.1:10096/')
 // 添加语音状态提示文本
 const statusMessages = {
   idle: '',
@@ -32,9 +32,18 @@ const statusMessages = {
 }
 
 // 初始化语音识别
-onMounted(() => {
+onMounted(async () => {
   // 不再需要监听recorder-scripts-loaded事件，因为我们使用了自己的组件
   console.log('组件已挂载，语音识别组件将自动初始化');
+  
+  // 加载ASR服务器地址配置
+  await loadAsrSettings();
+  
+  // 监听ASR设置更新事件
+  const unsubscribeAsrUpdate = window.api.onAsrSettingsUpdated((settings) => {
+    console.log('收到ASR设置更新通知:', settings);
+    updateAsrServerUrl(settings);
+  });
   
   // 3秒后检查服务器是否可用
   setTimeout(() => {
@@ -47,7 +56,53 @@ onBeforeUnmount(() => {
   if (speechRecognizer.value && isRecording.value) {
     speechRecognizer.value.stopRecognition()
   }
+  
+  // 自动卸载ASR设置更新事件监听（API已处理）
 })
+
+// 加载ASR设置
+const loadAsrSettings = async () => {
+  try {
+    const asrSettings = await window.api.getBasicSettings('asr');
+    updateAsrServerUrl(asrSettings);
+  } catch (error) {
+    console.error('加载ASR配置失败:', error);
+  }
+}
+
+// 更新ASR服务器URL
+const updateAsrServerUrl = (asrSettings) => {
+  if (asrSettings && asrSettings.length > 0) {
+    const funasrAddressSetting = asrSettings.find(s => s.name === 'funasrAddress');
+    if (funasrAddressSetting && funasrAddressSetting.value) {
+      // 确保地址是WebSocket格式
+      let wsAddress = funasrAddressSetting.value;
+      if (wsAddress.startsWith('http://')) {
+        // 如果是http地址，转换为ws地址，并替换默认端口10095为10096
+        wsAddress = wsAddress.replace('http://', 'ws://').replace(':10095', ':10096');
+      } else if (!wsAddress.startsWith('ws://')) {
+        // 如果既不是http也不是ws开头，添加ws://前缀
+        wsAddress = `ws://${wsAddress}`;
+      }
+      
+      // 确保端口是10096（WebSocket端口）
+      if (!wsAddress.includes(':10096') && wsAddress.includes(':10095')) {
+        wsAddress = wsAddress.replace(':10095', ':10096');
+      } else if (!wsAddress.includes(':')) {
+        // 如果没有指定端口，添加默认端口
+        wsAddress = `${wsAddress}:10096`;
+      }
+      
+      // 确保以/结尾
+      if (!wsAddress.endsWith('/')) {
+        wsAddress = `${wsAddress}/`;
+      }
+      
+      asrServerUrl.value = wsAddress;
+      console.log('已更新ASR服务器地址:', asrServerUrl.value);
+    }
+  }
+}
 
 // 检查服务器是否可用
 const checkServerAvailability = async () => {
@@ -365,7 +420,7 @@ const handleKeyDown = (event) => {
     <div style="display: none;">
       <SpeechRecognizer
         ref="speechRecognizer"
-        :server-url="asrServerUrl"
+        :server-url="asrServerUrl.value"
         :sample-rate="16000"
         :mime-type="'audio/wav'"
         :show-status="false"

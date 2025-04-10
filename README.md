@@ -74,7 +74,7 @@ pnpm install
 
 3. 启动开发环境
 ```bash
-pnpm dev
+pnpm start
 ```
 
 ### 构建应用

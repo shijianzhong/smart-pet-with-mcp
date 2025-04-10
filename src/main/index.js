@@ -1051,7 +1051,42 @@ ipcMain.handle('save-basic-setting', async (_, { name, value, category }) => {
 // 批量保存设置
 ipcMain.handle('batch-save-settings', async (_, settings) => {
   try {
-    return dbManager.batchSaveSettings(settings);
+    const result = dbManager.batchSaveSettings(settings);
+    
+    // 检查是否有LLM相关设置更新
+    const hasLlmSettingsUpdated = settings.some(s => s.category === 'llm');
+    
+    // 检查是否有ASR相关设置更新
+    const hasAsrSettingsUpdated = settings.some(s => s.category === 'asr');
+    
+    // 如果更新了LLM设置且MCP客户端存在，重新初始化OpenAI
+    if (hasLlmSettingsUpdated && globalMCPClient) {
+      try {
+        await globalMCPClient.initOpenAI();
+        console.log('已根据更新的设置重新初始化OpenAI客户端');
+      } catch (err) {
+        console.error('重新初始化OpenAI客户端失败:', err);
+      }
+    }
+    
+    // 如果更新了ASR设置，通知所有窗口更新ASR配置
+    if (hasAsrSettingsUpdated) {
+      // 获取所有窗口
+      const windows = BrowserWindow.getAllWindows();
+      
+      // 获取最新的ASR设置
+      const asrSettings = await dbManager.getBasicSettings('asr');
+      
+      // 通知所有窗口
+      windows.forEach(window => {
+        if (!window.isDestroyed()) {
+          window.webContents.send('asr-settings-updated', asrSettings);
+          console.log('已通知窗口更新ASR设置');
+        }
+      });
+    }
+    
+    return result;
   } catch (error) {
     console.error('批量保存设置失败:', error);
     return false;

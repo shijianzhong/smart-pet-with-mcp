@@ -5,6 +5,8 @@ import { ref, onMounted, onUnmounted } from 'vue'
 const llmBaseUrl = ref('')
 const llmModel = ref('')
 const llmSecretKey = ref('')
+// 添加密钥显示/隐藏状态控制
+const showSecretKey = ref(false)
 
 // 语音服务配置
 const funasrAddress = ref('')
@@ -245,6 +247,11 @@ const handlePaste = async (event, field) => {
     }
   }
 }
+
+// 切换密钥显示/隐藏
+const toggleSecretKeyVisibility = () => {
+  showSecretKey.value = !showSecretKey.value
+}
 </script>
 
 <template>
@@ -284,13 +291,23 @@ const handlePaste = async (event, field) => {
           
           <div class="form-group">
             <label class="form-label">密钥 (API Key)</label>
-            <input 
-              type="password" 
-              id="llm-secret-key"
-              name="llmSecretKey"
-              v-model="llmSecretKey" 
-              placeholder="请输入API密钥" 
-            />
+            <div class="password-input-container">
+              <input 
+                :type="showSecretKey ? 'text' : 'password'" 
+                id="llm-secret-key"
+                name="llmSecretKey"
+                v-model="llmSecretKey" 
+                placeholder="请输入API密钥" 
+              />
+              <button 
+                type="button" 
+                class="toggle-visibility-btn"
+                @click="toggleSecretKeyVisibility" 
+                :title="showSecretKey ? '隐藏密钥' : '显示密钥'"
+              >
+                {{ showSecretKey ? '隐藏' : '显示' }}
+              </button>
+            </div>
           </div>
         </div>
         
@@ -442,6 +459,40 @@ input[type="password"]:focus {
   border-color: #42b883;
   outline: none;
   box-shadow: 0 0 0 2px rgba(66, 184, 131, 0.2);
+}
+
+/* 密码输入框容器样式 */
+.password-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-container input {
+  flex: 1;
+  padding-right: 70px; /* 留出足够空间给按钮 */
+}
+
+.toggle-visibility-btn {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #f0f0f0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #555;
+  height: 28px;
+  margin: 0;
+  transition: all 0.2s;
+}
+
+.toggle-visibility-btn:hover {
+  background: #e0e0e0;
+  color: #333;
 }
 
 .status-bar {
