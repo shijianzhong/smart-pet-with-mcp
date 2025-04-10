@@ -1,0 +1,152 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ master, main ]
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v3
+      
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+          run_install: false
+      
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      
+      # 为Linux安装所需依赖
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+      
+      - name: Install dependencies
+        run: pnpm install
+      
+      - name: Create resources directory for macOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p build
+          if [ ! -f resources/trayicon.png ]; then
+            cp resources/icon.png resources/trayicon.png
+          fi
+          cp resources/trayicon.png build/
+      
+      - name: Create resources directory for Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir -p build
+          if (!(Test-Path "resources/trayicon.png")) {
+            Copy-Item "resources/icon.png" -Destination "resources/trayicon.png"
+          }
+          Copy-Item "resources/trayicon.png" -Destination "build/"
+        shell: pwsh
+      
+      - name: Create resources directory for Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p build
+          if [ ! -f resources/trayicon.png ]; then
+            cp resources/icon.png resources/trayicon.png
+          fi
+          cp resources/trayicon.png build/
+      
+      - name: Build for macOS
+        if: matrix.os == 'macos-latest'
+        run: pnpm run build:mac
+        env:
+          # 跳过Mac应用公证步骤，因为我们没有配置证书
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      
+      - name: Build for Windows
+        if: matrix.os == 'windows-latest'
+        run: pnpm run build:win
+      
+      - name: Build for Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: pnpm run build:linux
+      
+      - name: Upload macOS artifacts
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: mac-artifacts
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/mac/*.dmg
+      
+      - name: Upload Windows artifacts
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-artifacts
+          path: |
+            dist/*.exe
+            dist/*.msi
+            dist/*.zip
+            dist/win-unpacked/**/*
+      
+      - name: Upload Linux artifacts
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-artifacts
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.snap
+            dist/*.rpm
+
+  create-release:
+    needs: release
+    runs-on: ubuntu-latest
+    # 只有在带标签的提交中才会创建发布
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+      
+      - name: List downloaded files
+        run: find artifacts -type f | sort
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
