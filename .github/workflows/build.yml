@@ -495,10 +495,34 @@ jobs:
       - name: List downloaded files
         run: find artifacts -type f | sort
       
+      # 清理不需要上传的临时构建文件
+      - name: Clean up unnecessary files
+        run: |
+          # 删除所有tlog文件和其他构建临时文件
+          find artifacts -name "*.tlog" -delete
+          find artifacts -name "*.obj" -delete
+          find artifacts -name "*.pdb" -delete
+          find artifacts -name "*.iobj" -delete
+          find artifacts -name "*.ipdb" -delete
+          find artifacts -name "*.ilk" -delete
+          find artifacts -name "*.tmp" -delete
+          find artifacts -name "*.log" -delete
+          # 列出清理后的文件
+          echo "Remaining files after cleanup:"
+          find artifacts -type f | sort
+      
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: artifacts/**/*
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.msi
+            artifacts/**/*.AppImage
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.snap
+            artifacts/**/*.zip
           draft: false
           prerelease: false
           generate_release_notes: true
