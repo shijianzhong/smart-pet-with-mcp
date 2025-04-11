@@ -1,5 +1,12 @@
 name: Build and Release
 
+# 添加全局权限设置
+permissions:
+  contents: write
+  packages: write
+  issues: write
+  pull-requests: write
+
 on:
   push:
     branches: [ master, main ]
@@ -476,6 +483,9 @@ jobs:
     runs-on: ubuntu-latest
     # 只有在带标签的提交中才会创建发布
     if: startsWith(github.ref, 'refs/tags/')
+    # 为这个任务单独设置权限
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
