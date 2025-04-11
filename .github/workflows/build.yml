@@ -498,18 +498,50 @@ jobs:
       # 清理不需要上传的临时构建文件
       - name: Clean up unnecessary files
         run: |
-          # 删除所有tlog文件和其他构建临时文件
-          find artifacts -name "*.tlog" -delete
-          find artifacts -name "*.obj" -delete
-          find artifacts -name "*.pdb" -delete
-          find artifacts -name "*.iobj" -delete
-          find artifacts -name "*.ipdb" -delete
-          find artifacts -name "*.ilk" -delete
-          find artifacts -name "*.tmp" -delete
-          find artifacts -name "*.log" -delete
+          # 使用更安全的方式递归删除目录
+          echo "删除.tlog目录及文件..."
+          find artifacts -path "*/*.tlog*" -type d -exec rm -rf {} + 2>/dev/null || true
+          find artifacts -name "*.tlog" -type f -delete 2>/dev/null || true
+          
+          echo "删除其他临时构建文件..."
+          find artifacts -name "*.obj" -type f -delete 2>/dev/null || true
+          find artifacts -name "*.pdb" -type f -delete 2>/dev/null || true
+          find artifacts -name "*.iobj" -type f -delete 2>/dev/null || true
+          find artifacts -name "*.ipdb" -type f -delete 2>/dev/null || true
+          find artifacts -name "*.ilk" -type f -delete 2>/dev/null || true
+          find artifacts -name "*.tmp" -type f -delete 2>/dev/null || true
+          find artifacts -name "*.log" -type f -delete 2>/dev/null || true
+          
+          # 避免删除必要的可执行文件和DLL
+          echo "保留必要的可执行文件..."
+          
           # 列出清理后的文件
           echo "Remaining files after cleanup:"
           find artifacts -type f | sort
+      
+      # 直接使用压缩包而不是尝试上传整个目录
+      - name: Create zip archives of unpacked directories
+        run: |
+          echo "Creating zip archives of unpacked directories..."
+          # 为win-unpacked和linux-unpacked创建单独的zip文件
+          if [ -d "artifacts/windows-artifacts/win-unpacked" ]; then
+            echo "Compressing win-unpacked..."
+            cd artifacts/windows-artifacts
+            zip -r ../windows-unpacked.zip win-unpacked -x "*/node_modules/better-sqlite3/build/Release/obj/*" -x "*.tlog*" -x "*.obj" -x "*.pdb" -x "*.log"
+            cd ../..
+          fi
+          
+          if [ -d "artifacts/linux-artifacts/linux-unpacked" ]; then
+            echo "Compressing linux-unpacked..."
+            cd artifacts/linux-artifacts
+            zip -r ../linux-unpacked.zip linux-unpacked -x "*/node_modules/better-sqlite3/build/Release/obj/*" -x "*.tlog*" -x "*.obj" -x "*.pdb" -x "*.log"
+            cd ../..
+          fi
+          
+          # 移除原始unpacked目录以避免直接上传它们
+          echo "Removing original unpacked directories..."
+          rm -rf artifacts/windows-artifacts/win-unpacked 2>/dev/null || true
+          rm -rf artifacts/linux-artifacts/linux-unpacked 2>/dev/null || true
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
