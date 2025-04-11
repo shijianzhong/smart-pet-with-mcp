@@ -316,25 +316,25 @@ class MCPClient {
         return true;
       }
       
-      // 检查是否是使用npx命令启动服务器
-      if (serverScriptPath.includes('npx ')) {
-        console.log('使用npx命令启动服务器:', serverScriptPath);
-        const command = 'npx';
-        const args = serverScriptPath.replace('npx ', '').split(' ');
+      // // 检查是否是使用npx命令启动服务器
+      // if (serverScriptPath.includes('npx ')) {
+      //   console.log('使用npx命令启动服务器:', serverScriptPath);
+      //   const command = 'npx';
+      //   const args = serverScriptPath.replace('npx ', '').split(' ');
         
-        const process = spawn(command, args, {
-          shell: true,
-          stdio: ['pipe', 'pipe', 'pipe']
-        });
+      //   const process = spawn(command, args, {
+      //     shell: true,
+      //     stdio: ['pipe', 'pipe', 'pipe']
+      //   });
         
-        this.transport = new CustomStdioClientTransport({ process });
+      //   this.transport = new CustomStdioClientTransport({ process });
         
-        // 等待一段时间确保服务器启动
-        await new Promise(resolve => setTimeout(resolve, 2000));
+      //   // 等待一段时间确保服务器启动
+      //   await new Promise(resolve => setTimeout(resolve, 2000));
         
-        await this.transport.start();
-        return true;
-      }
+      //   await this.transport.start();
+      //   return true;
+      // }
       
       const isJs = serverScriptPath.endsWith(".js");
       const isMjs = serverScriptPath.endsWith(".mjs"); // 添加对 .mjs 文件的检测
