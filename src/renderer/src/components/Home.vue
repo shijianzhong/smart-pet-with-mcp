@@ -139,34 +139,14 @@ const handleRecognitionResult = (result) => {
     // 设置状态为正在处理，但不显示在界面上
     speechStatus.value = 'processing';
     // 立即发送消息
-    handleSendMessage();
-
-    // 设置状态为已完成
-    // speechStatus.value = 'completed';
-    
-    // 在发送消息后，直接设置状态为完成，不需要等待2秒
-    // speechStatus.value = 'completed';
-
-    // 在发送消息后，不设置completed状态，直接回到idle
-    // speechStatus.value = 'idle';
-
-    // 在发送消息后，不设置completed状态，直接回到idle
-    speechStatus.value = 'idle';
-    
-    // 2秒后恢复idle状态
-    setTimeout(() => {
-      if (speechStatus.value === 'completed') {
-        speechStatus.value = 'idle';
-      }
-    }, 2000);
-  }
-}
+    handleSendMessage()
+  }}
 
 // 处理实时识别结果
 const handleRealtimeRecognition = (result) => {
   console.log('收到实时识别结果:', result);
   if (result && result.text) {
-    realtimeText.value = result.text;
+    realtimeText.value = `我说：${result.text}`;
   }
 }
 
