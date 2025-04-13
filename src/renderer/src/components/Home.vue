@@ -136,8 +136,23 @@ const handleRecognitionResult = (result) => {
     userInput.value = result.text;
     // 清空实时文本
     realtimeText.value = '';
+    // 设置状态为正在处理，但不显示在界面上
+    speechStatus.value = 'processing';
+    // 立即发送消息
+    handleSendMessage();
+
     // 设置状态为已完成
-    speechStatus.value = 'completed';
+    // speechStatus.value = 'completed';
+    
+    // 在发送消息后，直接设置状态为完成，不需要等待2秒
+    // speechStatus.value = 'completed';
+
+    // 在发送消息后，不设置completed状态，直接回到idle
+    // speechStatus.value = 'idle';
+
+    // 在发送消息后，不设置completed状态，直接回到idle
+    speechStatus.value = 'idle';
+    
     // 2秒后恢复idle状态
     setTimeout(() => {
       if (speechStatus.value === 'completed') {
@@ -345,7 +360,7 @@ const handleKeyDown = (event) => {
     <Live2D />
     
     <!-- 聊天界面 -->
-    <div class="chat-container">
+    <!-- <div class="chat-container">
       <!-- 聊天历史记录 -->
       <div class="chat-history">
         <div v-for="(message, index) in chatHistory" :key="index" class="message" :class="message.role">
@@ -409,7 +424,7 @@ const handleKeyDown = (event) => {
           <span v-if="speechStatus === 'unavailable'" class="error-status">{{ statusMessages.unavailable }}</span>
         </div>
       </div>
-    </div>
+    </div> -->
     
     <!-- 加载状态 -->
     <div v-if="isLoading" class="loading-overlay">
@@ -582,18 +597,10 @@ textarea {
   app-region: no-drag;
 }
 
+/* 实时识别文本样式 */
 .realtime-text {
-  position: absolute;
-  bottom: 8px;
-  left: 8px;
-  right: 8px;
-  color: #777;
-  font-style: italic;
-  font-size: 0.9em;
-  pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 1.2em;
+  font-weight: bold;
 }
 
 button {
