@@ -85,3 +85,42 @@ if (process.contextIsolated) {
   window.electron = electronAPI
   window.api = api
 }
+
+// 暴露给渲染进程的API
+contextBridge.exposeInMainWorld('electronAPI', {
+  // 现有API
+  ping: () => ipcRenderer.invoke('ping'),
+  
+  // 基础设置API
+  getBasicSettings: (category) => ipcRenderer.invoke('get-basic-settings', category),
+  saveBasicSetting: (setting) => ipcRenderer.invoke('save-basic-setting', setting),
+  batchSaveSettings: (settings) => ipcRenderer.invoke('batch-save-settings', settings),
+  closeBasicSettingsDialog: () => ipcRenderer.send('close-basic-settings-dialog'),
+  
+  // MCP服务器API
+  getMcpServers: () => ipcRenderer.invoke('get-mcp-servers'),
+  saveMcpServer: (server) => ipcRenderer.invoke('save-mcp-server', server),
+  deleteMcpServer: (id) => ipcRenderer.invoke('delete-mcp-server', id),
+  startMcpServer: (server) => ipcRenderer.send('start-mcp-server', server),
+  stopMcpServer: (id) => ipcRenderer.send('stop-mcp-server', id),
+  startAllMcpServers: () => ipcRenderer.send('start-all-mcp-servers'),
+  closeMcpDialog: () => ipcRenderer.send('close-mcp-dialog'),
+  
+  // 对话系统新增API
+  getConversations: () => ipcRenderer.invoke('get-conversations'),
+  createConversation: (name) => ipcRenderer.invoke('create-conversation', name),
+  getConversationServers: (id) => ipcRenderer.invoke('get-conversation-servers', id),
+  addServerToConversation: (data) => ipcRenderer.invoke('add-server-to-conversation', data),
+  removeServerFromConversation: (data) => ipcRenderer.invoke('remove-server-from-conversation', data),
+  getChatHistory: (conversationId) => ipcRenderer.invoke('get-chat-history', conversationId),
+  saveChatMessage: (data) => ipcRenderer.invoke('save-chat-message', data),
+  
+  // 新的处理查询API，支持传递对话ID
+  processQuery: (data) => ipcRenderer.invoke('process-query', data),
+  
+  // 剪贴板API
+  readClipboardText: () => ipcRenderer.invoke('read-clipboard-text'),
+  writeClipboardText: (text) => ipcRenderer.invoke('write-clipboard-text', text),
+  
+  // 其他现有API...
+});

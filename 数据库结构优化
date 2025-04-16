@@ -1,0 +1,33 @@
+-- 扩展mcp_servers表，增加优先级和连接超时设置
+ALTER TABLE mcp_servers ADD COLUMN priority INTEGER DEFAULT 0;
+ALTER TABLE mcp_servers ADD COLUMN timeout INTEGER DEFAULT 30000;
+
+-- 创建工具表，记录所有服务器提供的工具
+CREATE TABLE IF NOT EXISTS mcp_tools (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  server_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  input_schema TEXT,
+  status TEXT DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+);
+
+-- 创建会话表，记录对话会话
+CREATE TABLE IF NOT EXISTS mcp_conversations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 创建会话-服务器映射表，记录会话使用的服务器
+CREATE TABLE IF NOT EXISTS mcp_conversation_servers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id INTEGER NOT NULL,
+  server_id INTEGER NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (conversation_id) REFERENCES mcp_conversations(id) ON DELETE CASCADE,
+  FOREIGN KEY (server_id) REFERENCES mcp_servers(id) ON DELETE CASCADE
+); 

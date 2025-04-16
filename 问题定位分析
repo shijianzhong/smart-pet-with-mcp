@@ -1,0 +1,15 @@
+/*
+ * 核心问题分析
+ */
+// 1. 项目引用了未创建的文件：mcp-service-manager.js和conversation-service.js
+// 2. 数据库迁移脚本可能执行有误
+// 3. IPC处理器中存在冲突：两个process-query处理器
+// 4. 旧的MCP客户端和新架构存在冲突 
+
+/*
+ * 工具调用问题分析
+ */
+// 1. 错误日志显示系统在服务器2上找到了工具list_allowed_directories
+// 2. 但调用时使用了全局客户端而非特定服务器的客户端
+// 3. 错误信息：Tool list_allowed_directories not found
+// 4. callTool方法中存在逻辑缺陷，没有正确路由工具调用到对应服务器 

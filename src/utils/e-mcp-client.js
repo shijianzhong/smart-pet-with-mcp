@@ -235,6 +235,7 @@ class MCPClient {
    transport = null;
    tools = [];
    config;
+   currentServerPath = null; // 当前连接的服务器路径
 
   constructor() {
     // 默认配置，将在connectToServer中被实际配置替换
@@ -305,6 +306,9 @@ class MCPClient {
 
   async connectToServer(serverScriptPath) {
     try {
+      // 保存服务器路径
+      this.currentServerPath = serverScriptPath;
+      
       // 首先初始化OpenAI配置
       await this.initOpenAI();
       
@@ -892,4 +896,5 @@ class MCPClient {
   }
 }
 
+export { MCPClient };
 export default MCPClient;
